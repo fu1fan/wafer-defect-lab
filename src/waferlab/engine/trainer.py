@@ -1,0 +1,196 @@
+"""Training loop for wafer-level classification."""
+
+from __future__ import annotations
+
+import time
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import torch
+import torch.nn as nn
+from torch.optim import AdamW
+from torch.optim.lr_scheduler import CosineAnnealingLR
+from torch.utils.data import DataLoader
+
+from ..models.classifier import WaferClassifier
+
+
+class Trainer:
+    """Encapsulated training state for a wafer classifier.
+
+    Parameters
+    ----------
+    model : WaferClassifier
+    train_loader : DataLoader
+    val_loader : DataLoader or None
+    config : dict
+        Training hyper-parameters (lr, epochs, weight_decay, etc.).
+    device : str
+    output_dir : Path
+        Where to save checkpoints and logs.
+    task_mode : str
+        ``"binary"`` or ``"multiclass"`` – determines how labels are read
+        from each batch dict.
+    """
+
+    def __init__(
+        self,
+        model: WaferClassifier,
+        train_loader: DataLoader,
+        val_loader: DataLoader | None,
+        config: dict[str, Any],
+        *,
+        device: str = "cuda",
+        output_dir: Path = Path("outputs"),
+        task_mode: str = "binary",
+    ) -> None:
+        self.device = torch.device(device if torch.cuda.is_available() else "cpu")
+        self.model = model.to(self.device)
+        self.train_loader = train_loader
+        self.val_loader = val_loader
+        self.task_mode = task_mode
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+
+        self.epochs: int = int(config.get("epochs", 30))
+        lr: float = float(config.get("lr", 1e-3))
+        wd: float = float(config.get("weight_decay", 1e-4))
+        self.grad_clip: float = float(config.get("grad_clip", 0.0))
+        self.log_interval: int = int(config.get("log_interval", 50))
+
+        self.optimizer = AdamW(self.model.parameters(), lr=lr, weight_decay=wd)
+        self.scheduler = CosineAnnealingLR(self.optimizer, T_max=self.epochs)
+
+        # Optional class weights for imbalanced data.
+        class_weights = config.get("class_weights")
+        if class_weights is not None:
+            w = torch.tensor(class_weights, dtype=torch.float32, device=self.device)
+            self.criterion = nn.CrossEntropyLoss(weight=w)
+        else:
+            self.criterion = nn.CrossEntropyLoss()
+
+        self.best_val_acc: float = 0.0
+        self.history: list[dict[str, Any]] = []
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def fit(self) -> list[dict[str, Any]]:
+        """Run the full training loop. Returns epoch-level history."""
+        for epoch in range(1, self.epochs + 1):
+            t0 = time.time()
+            train_loss, train_acc = self._train_one_epoch(epoch)
+            val_loss, val_acc = self._validate() if self.val_loader else (0.0, 0.0)
+            self.scheduler.step()
+
+            record = {
+                "epoch": epoch,
+                "train_loss": train_loss,
+                "train_acc": train_acc,
+                "val_loss": val_loss,
+                "val_acc": val_acc,
+                "lr": self.optimizer.param_groups[0]["lr"],
+                "elapsed": time.time() - t0,
+            }
+            self.history.append(record)
+            print(
+                f"Epoch {epoch}/{self.epochs}  "
+                f"train_loss={train_loss:.4f}  train_acc={train_acc:.4f}  "
+                f"val_loss={val_loss:.4f}  val_acc={val_acc:.4f}  "
+                f"lr={record['lr']:.2e}  "
+                f"time={record['elapsed']:.1f}s"
+            )
+
+            if val_acc > self.best_val_acc:
+                self.best_val_acc = val_acc
+                self.save_checkpoint("best.pt")
+
+        self.save_checkpoint("last.pt")
+        return self.history
+
+    def save_checkpoint(self, filename: str) -> Path:
+        path = self.output_dir / filename
+        torch.save(
+            {
+                "model_state_dict": self.model.state_dict(),
+                "optimizer_state_dict": self.optimizer.state_dict(),
+                "best_val_acc": self.best_val_acc,
+                "history": self.history,
+            },
+            path,
+        )
+        return path
+
+    # ------------------------------------------------------------------
+    # Internal
+    # ------------------------------------------------------------------
+
+    def _extract_labels(self, batch: dict[str, Any]) -> torch.Tensor:
+        """Get classification target from a data batch."""
+        if self.task_mode == "binary":
+            return batch["label"].to(self.device, dtype=torch.long)
+        # multiclass: failure_type_idx pre-computed by the dataset/collate.
+        return batch["failure_type_idx"].to(self.device, dtype=torch.long)
+
+    def _prepare_input(self, batch: dict[str, Any]) -> torch.Tensor:
+        x = batch["image"].to(self.device)
+        if self.model.in_channels == 3 and x.shape[1] == 1:
+            x = x.expand(-1, 3, -1, -1)
+        # Normalize from discrete {0,1,2} to [0, 1].
+        x = x / 2.0
+        return x
+
+    def _train_one_epoch(self, epoch: int) -> tuple[float, float]:
+        self.model.train()
+        total_loss = 0.0
+        correct = 0
+        total = 0
+
+        for step, batch in enumerate(self.train_loader, 1):
+            x = self._prepare_input(batch)
+            y = self._extract_labels(batch)
+
+            logits = self.model(x)
+            loss = self.criterion(logits, y)
+
+            self.optimizer.zero_grad()
+            loss.backward()
+            if self.grad_clip > 0:
+                nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
+            self.optimizer.step()
+
+            total_loss += loss.item() * y.size(0)
+            correct += (logits.argmax(1) == y).sum().item()
+            total += y.size(0)
+
+            if step % self.log_interval == 0:
+                running_loss = total_loss / total
+                running_acc = correct / total
+                print(
+                    f"  [epoch {epoch} step {step}] "
+                    f"loss={running_loss:.4f}  acc={running_acc:.4f}"
+                )
+
+        return total_loss / max(total, 1), correct / max(total, 1)
+
+    @torch.no_grad()
+    def _validate(self) -> tuple[float, float]:
+        self.model.eval()
+        total_loss = 0.0
+        correct = 0
+        total = 0
+
+        for batch in self.val_loader:  # type: ignore[union-attr]
+            x = self._prepare_input(batch)
+            y = self._extract_labels(batch)
+
+            logits = self.model(x)
+            loss = self.criterion(logits, y)
+
+            total_loss += loss.item() * y.size(0)
+            correct += (logits.argmax(1) == y).sum().item()
+            total += y.size(0)
+
+        return total_loss / max(total, 1), correct / max(total, 1)

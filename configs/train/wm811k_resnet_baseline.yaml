@@ -1,0 +1,34 @@
+# ── WM-811K ResNet baseline ──────────────────────────────────────────
+# First-phase wafer-level classification experiment.
+#
+# Task modes:
+#   binary     – normal (0) vs abnormal (1)
+#   multiclass – 9-class failure-type pattern classification
+# ─────────────────────────────────────────────────────────────────────
+
+task_mode: binary   # binary | multiclass
+
+model:
+  arch: resnet18
+  in_channels: 1      # 1 = single-channel wafer map; 3 = channel-replicated
+  pretrained: false    # ImageNet init (set in_channels=3 to get full benefit)
+  dropout: 0.2
+
+train:
+  epochs: 30
+  lr: 1.0e-3
+  weight_decay: 1.0e-4
+  grad_clip: 0.0
+  log_interval: 100
+  # class_weights: [0.15, 1.0]  # uncomment to handle imbalance in binary mode
+
+data:
+  batch_size: 64
+  num_workers: 4
+  pin_memory: true
+
+  # Augmentation flags – only spatial transforms that preserve wafer-map
+  # semantics.  No color jitter, random crop, or continuous-intensity ops.
+  augment:
+    random_flip: true       # horizontal + vertical
+    random_rotate90: true   # 0 / 90 / 180 / 270 degrees

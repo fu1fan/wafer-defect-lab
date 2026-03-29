@@ -4,3 +4,8 @@ pandas
 h5py
 pyarrow
 PyYAML
+
+# Training & model dependencies
+torch
+torchvision
+matplotlib

@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Mapping, cast
 
+import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import Dataset
@@ -44,7 +45,11 @@ class WM811KProcessedDataset(Dataset[dict[str, Any]]):
             raise FileNotFoundError(f"Processed index not found: {self.index_path}")
 
         self.index_df = pd.read_parquet(self.index_path)
+        # Store original HDF5 row indices before filtering so that
+        # __getitem__ can fetch the correct row from the HDF5 file.
+        self.index_df["_h5_idx"] = np.arange(len(self.index_df), dtype=np.int64)
         self.index_df = _apply_filters(self.index_df, self.filters)
+        self._h5_indices = self.index_df["_h5_idx"].to_numpy(dtype=np.int64)
         self._h5_file: Any | None = None
 
     def __len__(self) -> int:
@@ -52,9 +57,10 @@ class WM811KProcessedDataset(Dataset[dict[str, Any]]):
 
     def __getitem__(self, index: int) -> dict[str, Any]:
         row = self.index_df.iloc[index]
+        h5_idx = int(self._h5_indices[index])
         maps_ds = cast(Any, self._get_h5_file()["maps"])
 
-        wafer_map = torch.from_numpy(maps_ds[index])
+        wafer_map = torch.from_numpy(maps_ds[h5_idx])
         if self.return_float:
             wafer_map = wafer_map.to(dtype=torch.float32)
 
