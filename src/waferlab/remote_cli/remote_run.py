@@ -30,6 +30,7 @@ from .common import (
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_TRAIN_CONFIG = "configs/train/wm811k_resnet_baseline.yaml"
 BLUE = "\033[34m"
+GREEN = "\033[32m"
 RESET = "\033[0m"
 
 
@@ -93,8 +94,13 @@ def _blue(text: str) -> str:
     return f"{BLUE}{text}{RESET}"
 
 
+def _green(text: str) -> str:
+    return f"{GREEN}{text}{RESET}"
+
+
 def _print_tagged(tag: str, message: str) -> None:
-    print(f"{_blue(f'[{tag}]')}{_blue(message)}")
+    colorize = _green if tag == "remote" else _blue
+    print(f"{colorize(f'[{tag}]')}{colorize(message)}")
 
 
 def _stream_remote_command(config_host: str, ssh_command: list[str], remote_command: str) -> None:
@@ -132,6 +138,7 @@ def main() -> int:
         project_root=args.project_root,
         data_root=args.data_root,
         output_root=args.output_root,
+        deployment_mode=None,
         python_bin=args.python_bin,
         bootstrap_cmd=None,
         local_report_root=None,

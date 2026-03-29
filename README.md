@@ -180,16 +180,28 @@ make eval
 
 远程控制脚本已经迁移到 `scripts-remote/`，并改成 Python CLI。现在按三类职责拆分：
 - `scripts-remote/deploy.py`：部署代码与环境，并可选远端下载/处理数据
-- `scripts-remote/remote-run.py`：先同步代码，再在远端执行任意 `scripts/` 下脚本，并把小文件结果直接回写到本地 `outputs/`
+- `scripts-remote/remote_run.py`：先同步代码，再在远端执行任意 `scripts/` 下脚本，并把小文件结果直接回写到本地 `outputs/`
 - `scripts-remote/fetch_all_output.py`：按需补拉完整输出目录，包括大文件
 
-推荐先部署，再训练：
+推荐先部署，再按需要分别运行数据准备、预处理和训练：
 
 ```bash
 make remote-deploy \
   HOST=root@host \
+  PORT=20277
+```
+
+```bash
+make remote-prepare-data \
+  HOST=root@host \
   PORT=20277 \
-  PREPARE_DATA=1 \
+  DATASET=WM-811K
+```
+
+```bash
+make remote-process-data \
+  HOST=root@host \
+  PORT=20277 \
   PROCESS_SUBSETS="labeled"
 ```
 
@@ -215,21 +227,52 @@ make remote-fetch-all-output RUN_ID=run-20260330-120000
 
 这套 Python CLI 现在优先针对 Vast.ai / Runpod 这类“SSH 进去已经在容器/工作空间里”的远端 shell 模式，不再依赖 Docker in Docker。
 
-如果远端当前环境还没有装好依赖，`remote-deploy` 会默认执行：
+`remote-deploy` 现在默认使用 `system` 部署模式：
+- 不创建 `venv`
+- 不自动安装 `torch` / `torchvision`
+- 直接使用系统默认 `python3`
+- 默认要求你先探测并选择远端解释器，避免误用没有 torch 的系统 Python
+- 依赖会安装到你最终选中的 `python_bin`
+- 回传远端当前的 Python / torch / torchvision / CUDA 探测结果
+
+默认 bootstrap 模板是：
 
 ```bash
-python3 -m venv /workspace/waferlab-venv
-/workspace/waferlab-venv/bin/pip install --no-cache-dir -r requirements.txt
+{python_bin} -m pip install --no-cache-dir -r requirements.txt
 ```
 
-随后会自动探测远端 `nvidia-smi` 暴露出来的 CUDA 版本，并安装当前支持矩阵里最新的 PyTorch 组合：
+例如如果你选择的是 `/opt/miniforge3/bin/python`，实际执行的就是：
+
+```bash
+/opt/miniforge3/bin/python -m pip install --no-cache-dir -r requirements.txt
+```
+
+如果你明确想走隔离环境，也可以切回 `venv` 模式：
+
+```bash
+make remote-deploy \
+  HOST=root@host \
+  PORT=20277 \
+  REMOTE_DEPLOYMENT_MODE=venv
+```
+
+只有在 `venv` 模式下，`remote-deploy` 才会继续按 CUDA 版本自动安装当前支持矩阵里的 PyTorch 组合：
 - CUDA 13.0: `torch==2.10.0`, `torchvision==0.25.0`
 - CUDA 12.8: `torch==2.10.0`, `torchvision==0.25.0`
 - CUDA 12.6: `torch==2.10.0`, `torchvision==0.25.0`
 - CUDA 12.4: `torch==2.6.0`, `torchvision==0.21.0`
 - 未检测到可用 GPU: CPU 版 `torch==2.10.0`, `torchvision==0.25.0`
 
-也可以通过 `REMOTE_BOOTSTRAP_CMD=...` 覆盖，或传 `--skip-torch-install` 跳过自动安装。
+也可以通过 `REMOTE_BOOTSTRAP_CMD=...` 覆盖，或在 `venv` 模式下传 `--skip-torch-install` 跳过自动安装。
+
+如果你已经知道远端要用哪个解释器，也可以直接指定：
+
+```bash
+make remote-deploy \
+  HOST=root@host \
+  PORT=20277 \
+  REMOTE_PYTHON_BIN=/opt/miniforge3/bin/python
+```
 
 `remote-train` 会：
 - 先把本地代码与配置同步到远端项目目录
@@ -237,14 +280,16 @@ python3 -m venv /workspace/waferlab-venv
 - 在本地实时跟随远端训练日志
 - 训练结束后按 `SYNC_MAX_SIZE` 限制把远端 `outputs/` 中的小文件直接同步回本地 `outputs/`
 
+`remote-prepare-data` 和 `remote-process-data` 也都是通过 `remote_run.py` 执行，因此会共享同一套远端 `python_bin`、数据根目录和输出回传逻辑。
+
 如果你想执行任意远端脚本，可以直接调用：
 
 ```bash
-python scripts-remote/remote-run.py scripts/train_classifier.py -- --smoke-test
-python scripts-remote/remote-run.py scripts/eval_classifier.py -- --checkpoint outputs/runs/run-20260330-120000/best.pt
+python scripts-remote/remote_run.py scripts/train_classifier.py -- --smoke-test
+python scripts-remote/remote_run.py scripts/eval_classifier.py -- --checkpoint outputs/runs/run-20260330-120000/best.pt
 ```
 
-默认情况下，`remote-run.py` 会把小于 `32m` 的文件从远端 `outputs/` 回写到本地 `outputs/`。需要补拉大文件时，再执行：
+默认情况下，`remote_run.py` 会把小于 `32m` 的文件从远端 `outputs/` 回写到本地 `outputs/`。需要补拉大文件时，再执行：
 
 ```bash
 python scripts-remote/fetch_all_output.py --run-id run-20260330-120000

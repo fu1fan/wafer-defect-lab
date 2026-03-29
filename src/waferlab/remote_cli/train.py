@@ -65,6 +65,7 @@ def main() -> int:
         project_root=args.project_root,
         data_root=args.data_root,
         output_root=args.output_root,
+        deployment_mode=None,
         python_bin=args.python_bin,
         bootstrap_cmd=None,
         local_report_root=args.local_report_root,

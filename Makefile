@@ -3,7 +3,7 @@ CONDA_RUN := conda run -n torch
 PROJECT := wafer-defect-lab
 OUTPUT_ROOT ?= $(or $(WAFERLAB_OUTPUT_ROOT),outputs)
 
-.PHONY: help install data preprocess train eval cam clean smoke-test remote-deploy remote-run remote-train remote-fetch-all-output
+.PHONY: help install data preprocess train eval cam clean smoke-test remote-deploy remote-run remote-prepare-data remote-process-data remote-train remote-fetch-all-output
 
 help:
 	@echo "Available commands:"
@@ -16,6 +16,8 @@ help:
 	@echo "  make smoke-test   Quick 1-epoch pipeline test"
 	@echo "  make remote-deploy Deploy code/environment and optionally prepare data on a remote shell host"
 	@echo "  make remote-run Run any scripts/ entrypoint remotely after syncing code, then mirror small outputs back"
+	@echo "  make remote-prepare-data Run scripts/prepare_data.py remotely through remote_run"
+	@echo "  make remote-process-data Run scripts/process_data.py remotely through remote_run"
 	@echo "  make remote-train Run remote training with the generic remote-run workflow"
 	@echo "  make remote-fetch-all-output Download full remote outputs, including large files"
 	@echo "  make clean        Remove temporary outputs"
@@ -50,9 +52,11 @@ remote-deploy:
 		$(if $(REMOTE_PROJECT_ROOT),--project-root $(REMOTE_PROJECT_ROOT)) \
 		$(if $(REMOTE_DATA_ROOT),--data-root $(REMOTE_DATA_ROOT)) \
 		$(if $(REMOTE_OUTPUT_ROOT),--output-root $(REMOTE_OUTPUT_ROOT)) \
+		$(if $(REMOTE_DEPLOYMENT_MODE),--deployment-mode $(REMOTE_DEPLOYMENT_MODE)) \
 		$(if $(REMOTE_PYTHON_BIN),--python-bin $(REMOTE_PYTHON_BIN)) \
 		$(if $(REMOTE_BOOTSTRAP_CMD),--bootstrap-cmd $(REMOTE_BOOTSTRAP_CMD)) \
 		$(if $(LOCAL_REPORT_ROOT),--local-report-root $(LOCAL_REPORT_ROOT)) \
+		$(if $(SKIP_TORCH_INSTALL),--skip-torch-install) \
 		$(if $(PREPARE_DATA),--prepare-data) \
 		$(if $(DATASET),--dataset $(DATASET)) \
 		$(foreach subset,$(PROCESS_SUBSETS),--process-subset $(subset)) \
@@ -73,6 +77,36 @@ remote-run:
 		$(if $(SYNC_MAX_SIZE),--sync-max-size $(SYNC_MAX_SIZE)) \
 		$(if $(NO_SYNC_OUTPUTS),--no-sync-outputs) \
 		$(ARGS)
+
+remote-prepare-data:
+	$(PYTHON) scripts-remote/remote_run.py scripts/prepare_data.py \
+		$(if $(HOST),--host $(HOST)) \
+		$(if $(PORT),--port $(PORT)) \
+		$(if $(REMOTE_PROJECT_ROOT),--project-root $(REMOTE_PROJECT_ROOT)) \
+		$(if $(REMOTE_DATA_ROOT),--data-root $(REMOTE_DATA_ROOT)) \
+		$(if $(REMOTE_OUTPUT_ROOT),--output-root $(REMOTE_OUTPUT_ROOT)) \
+		$(if $(REMOTE_PYTHON_BIN),--python-bin $(REMOTE_PYTHON_BIN)) \
+		$(if $(LOCAL_OUTPUT_ROOT),--local-output-root $(LOCAL_OUTPUT_ROOT)) \
+		$(if $(SYNC_MAX_SIZE),--sync-max-size $(SYNC_MAX_SIZE)) \
+		$(if $(NO_SYNC_OUTPUTS),--no-sync-outputs) \
+		$(if $(DATASET),--dataset $(DATASET)) \
+		$(if $(FORCE_DATA),--force) \
+		-- $(ARGS)
+
+remote-process-data:
+	$(PYTHON) scripts-remote/remote_run.py scripts/process_data.py \
+		$(if $(HOST),--host $(HOST)) \
+		$(if $(PORT),--port $(PORT)) \
+		$(if $(REMOTE_PROJECT_ROOT),--project-root $(REMOTE_PROJECT_ROOT)) \
+		$(if $(REMOTE_DATA_ROOT),--data-root $(REMOTE_DATA_ROOT)) \
+		$(if $(REMOTE_OUTPUT_ROOT),--output-root $(REMOTE_OUTPUT_ROOT)) \
+		$(if $(REMOTE_PYTHON_BIN),--python-bin $(REMOTE_PYTHON_BIN)) \
+		$(if $(LOCAL_OUTPUT_ROOT),--local-output-root $(LOCAL_OUTPUT_ROOT)) \
+		$(if $(SYNC_MAX_SIZE),--sync-max-size $(SYNC_MAX_SIZE)) \
+		$(if $(NO_SYNC_OUTPUTS),--no-sync-outputs) \
+		$(foreach subset,$(PROCESS_SUBSETS),--subset $(subset)) \
+		$(if $(FORCE_DATA),--force) \
+		-- $(ARGS)
 
 remote-train:
 	$(PYTHON) scripts-remote/remote_run.py scripts/train_classifier.py \

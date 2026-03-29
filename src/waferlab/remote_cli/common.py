@@ -19,6 +19,7 @@ DEFAULT_LOCAL_REPORT_ROOT = PROJECT_ROOT / "outputs" / "remote"
 DEFAULT_LOCAL_OUTPUT_ROOT = PROJECT_ROOT / "outputs"
 MINIMUM_SUPPORTED_CUDA = 12.6
 MAXIMUM_SUPPORTED_CUDA = 13.0
+DEFAULT_DEPLOYMENT_MODE = "system"
 
 
 @dataclass(frozen=True)
@@ -42,10 +43,18 @@ def _default_data_root(project_root: str) -> str:
 
 
 def _default_python_bin() -> str:
-    return "/workspace/waferlab-venv/bin/python"
+    return "python3"
 
 
 def _default_bootstrap_cmd() -> str:
+    return "{python_bin} -m pip install --no-cache-dir -r requirements.txt"
+
+
+def _venv_python_bin() -> str:
+    return "/workspace/waferlab-venv/bin/python"
+
+
+def _venv_bootstrap_cmd() -> str:
     return (
         "python3 -m venv /workspace/waferlab-venv && "
         "/workspace/waferlab-venv/bin/pip install --no-cache-dir -r requirements.txt"
@@ -106,11 +115,14 @@ class DeploymentConfig:
     project_root: str = _default_project_root()
     data_root: str | None = None
     output_root: str | None = None
+    deployment_mode: str = DEFAULT_DEPLOYMENT_MODE
     python_bin: str = _default_python_bin()
     bootstrap_cmd: str = _default_bootstrap_cmd()
     local_report_root: str = str(DEFAULT_LOCAL_REPORT_ROOT)
 
     def __post_init__(self) -> None:
+        if self.deployment_mode not in {"system", "venv"}:
+            raise ValueError("deployment_mode must be 'system' or 'venv'")
         if self.data_root is None:
             self.data_root = _default_data_root(self.project_root)
         if self.output_root is None:
@@ -152,7 +164,16 @@ def load_state() -> RemoteState:
     if not STATE_FILE.exists():
         raise FileNotFoundError(f"No remote state found at {STATE_FILE}")
     payload = json.loads(STATE_FILE.read_text(encoding="utf-8"))
-    deployment = DeploymentConfig(**payload["deployment"])
+    deployment_payload = dict(payload["deployment"])
+    if "deployment_mode" not in deployment_payload:
+        deployment_payload["deployment_mode"] = DEFAULT_DEPLOYMENT_MODE
+        if deployment_payload.get("python_bin") == _venv_python_bin():
+            deployment_payload["python_bin"] = _default_python_bin()
+        if deployment_payload.get("bootstrap_cmd") == _venv_bootstrap_cmd():
+            deployment_payload["bootstrap_cmd"] = _default_bootstrap_cmd()
+    if deployment_payload.get("bootstrap_cmd") == "python3 -m pip install --no-cache-dir -r requirements.txt":
+        deployment_payload["bootstrap_cmd"] = _default_bootstrap_cmd()
+    deployment = DeploymentConfig(**deployment_payload)
     last_run = None
     if payload.get("last_run") is not None:
         last_run = RunState(**payload["last_run"])
@@ -167,19 +188,25 @@ def merge_deployment_overrides(
     project_root: str | None,
     data_root: str | None,
     output_root: str | None,
+    deployment_mode: str | None,
     python_bin: str | None,
     bootstrap_cmd: str | None,
     local_report_root: str | None,
 ) -> DeploymentConfig:
     base = state.deployment if state is not None else None
+    mode = deployment_mode or (base.deployment_mode if base else DEFAULT_DEPLOYMENT_MODE)
+    default_python_bin = _venv_python_bin() if mode == "venv" else _default_python_bin()
+    default_bootstrap_cmd = _venv_bootstrap_cmd() if mode == "venv" else _default_bootstrap_cmd()
     return DeploymentConfig(
         host=host or (base.host if base else ""),
         port=port or (base.port if base else 22),
         project_root=project_root or (base.project_root if base else _default_project_root()),
         data_root=data_root or (base.data_root if base else None),
         output_root=output_root or (base.output_root if base else None),
-        python_bin=python_bin or (base.python_bin if base else _default_python_bin()),
-        bootstrap_cmd=bootstrap_cmd or (base.bootstrap_cmd if base else _default_bootstrap_cmd()),
+        deployment_mode=mode,
+        python_bin=python_bin or (base.python_bin if base and base.deployment_mode == mode else default_python_bin),
+        bootstrap_cmd=bootstrap_cmd
+        or (base.bootstrap_cmd if base and base.deployment_mode == mode else default_bootstrap_cmd),
         local_report_root=local_report_root
         or (base.local_report_root if base else str(DEFAULT_LOCAL_REPORT_ROOT)),
     )
