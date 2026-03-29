@@ -52,7 +52,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}
           tags: |
-            type=raw,value=cu130
+            type=raw,value=cu128
             type=sha,prefix=sha-
 
       - name: Build and push base image
@@ -106,7 +106,7 @@ jobs:
           context: .
           file: ./Dockerfile
           build-args: |
-            BASE_IMAGE=${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}:cu130
+            BASE_IMAGE=${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}:cu128
           push: true
           tags: ${{ steps.app_meta.outputs.tags }}
           labels: ${{ steps.app_meta.outputs.labels }}

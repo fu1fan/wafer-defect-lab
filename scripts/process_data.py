@@ -30,6 +30,13 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Rebuild processed artifacts even if they already exist.",
     )
+    parser.add_argument(
+        "--subset",
+        action="append",
+        choices=["labeled", "unlabeled"],
+        default=None,
+        help="Only build the specified subset(s). Can be passed multiple times.",
+    )
     return parser.parse_args()
 
 
@@ -54,6 +61,7 @@ def main() -> int:
             processed_root=processed_root,
             config=config,
             force=args.force,
+            subsets=args.subset,
         )
     except NotImplementedError as exc:
         print(f"[error] {exc}", file=sys.stderr)

@@ -86,7 +86,7 @@ wafer-defect-lab/
 
 ```bash
 conda activate torch
-pip install -r requirements.txt
+pip install -r requirements.txt -r requirements-cu128.txt
 ```
 
 本地训练默认采用 `device=auto`：
@@ -177,11 +177,11 @@ make eval
 容器基座固定为官方镜像：
 
 ```text
-pytorch/pytorch:2.10.0-cuda13.0-cudnn9-runtime
+pytorch/pytorch:2.9.1-cuda12.8-cudnn9-runtime
 ```
 
 项目现在分成两层镜像：
-- `ghcr.io/<owner>/wafer-defect-lab-base:cu130`：稳定的 PyTorch + CUDA + Python 依赖层
+- `ghcr.io/<owner>/wafer-defect-lab-base:cu128`：稳定的 PyTorch + CUDA + Python 依赖层
 - `ghcr.io/<owner>/wafer-defect-lab:<tag>`：轻量的项目代码层
 
 运行镜像不包含 `data/` 与 `outputs/`。这两部分通过挂载目录注入。
@@ -200,17 +200,55 @@ make docker-train-local
 
 这个本地 Docker 入口也会优先申请 GPU；如果宿主机没有可见的 NVIDIA 环境，则直接以 CPU 方式启动容器。
 
-通过 SSH 在远程 GPU 主机启动训练：
+远程控制脚本已经迁移到 `scripts-remote/`，并改成 Python CLI。现在按三类职责拆分：
+- `scripts-remote/deploy.py`：部署代码与环境，并可选远端下载/处理数据
+- `scripts-remote/train.py`：按配置启动远端训练，训练完成后自动拉回报告
+- `scripts-remote/fetch_weights.py`：按需下载权重文件
+
+推荐先部署，再训练：
 
 ```bash
-make remote-train HOST=user@server IMAGE=ghcr.io/<owner>/<repo>:latest ARGS="--smoke-test"
+make remote-deploy \
+  HOST=root@host \
+  PORT=20277 \
+  PREPARE_DATA=1 \
+  PROCESS_SUBSETS="labeled"
 ```
-
-把远程训练产物拉回本地：
 
 ```bash
-make fetch-outputs HOST=user@server SUBDIR=wm811k_resnet_baseline
+make remote-train \
+  HOST=root@host \
+  PORT=20277 \
+  CONFIG=configs/train/wm811k_resnet_baseline.yaml \
+  ARGS="--smoke-test"
 ```
+
+```bash
+make remote-fetch-weights PATTERN="best.pt"
+```
+
+这套 Python CLI 现在优先针对 Vast.ai / Runpod 这类“SSH 进去已经在容器/工作空间里”的远端 shell 模式，不再依赖 Docker in Docker。
+
+如果远端当前环境还没有装好依赖，`remote-deploy` 会默认执行：
+
+```bash
+python3 -m venv /workspace/waferlab-venv
+/workspace/waferlab-venv/bin/pip install --no-cache-dir -r requirements.txt -r requirements-cu128.txt
+```
+
+也可以通过 `REMOTE_BOOTSTRAP_CMD=...` 覆盖。
+
+`remote-train` 会：
+- 根据你选择的训练配置和附加参数运行 `scripts/train_classifier.py`
+- 在本地实时跟随远端训练日志
+- 训练结束后自动同步小报告到本地 `outputs/remote/<run_id>/`
+
+当前远端兼容基线已回退到更保守的组合：
+- `torch==2.9.1`
+- `torchvision==0.24.1`
+- `CUDA 12.8`
+
+这样比 `torch 2.11 + CUDA 13` 更容易匹配现有的 R570 驱动环境。
 
 ### GitHub Actions 镜像发布
 

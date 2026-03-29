@@ -40,6 +40,7 @@ def build_processed_dataset(
     processed_root: Path,
     config: dict[str, Any],
     force: bool = False,
+    subsets: list[str] | None = None,
 ) -> dict[str, ProcessedArtifacts]:
     """Build processed artifacts for a supported dataset."""
     normalized = dataset_name.lower()
@@ -49,6 +50,7 @@ def build_processed_dataset(
             processed_root=processed_root,
             config=config,
             force=force,
+            subsets=subsets,
         )
     raise NotImplementedError(
         f"Processed builder for dataset '{dataset_name}' is not implemented yet."
@@ -61,6 +63,7 @@ def build_wm811k_processed_dataset(
     processed_root: Path,
     config: dict[str, Any],
     force: bool = False,
+    subsets: list[str] | None = None,
 ) -> dict[str, ProcessedArtifacts]:
     """Build training-ready WM-811K processed artifacts."""
     resize_mode = str(config.get("resize_mode", "nearest")).lower()
@@ -107,8 +110,14 @@ def build_wm811k_processed_dataset(
     labeled_df = index_df[index_df["is_labeled"]].reset_index(drop=True)
     unlabeled_df = index_df[~index_df["is_labeled"]].reset_index(drop=True)
 
-    artifacts = {
-        "labeled": _build_wm811k_subset(
+    selected_subsets = set(subsets or ["labeled", "unlabeled"])
+    invalid_subsets = selected_subsets - {"labeled", "unlabeled"}
+    if invalid_subsets:
+        raise ValueError(f"Unsupported subset(s): {sorted(invalid_subsets)}")
+
+    artifacts: dict[str, ProcessedArtifacts] = {}
+    if "labeled" in selected_subsets:
+        artifacts["labeled"] = _build_wm811k_subset(
             subset_name="labeled",
             subset_df=labeled_df,
             interim_h5_path=interim_h5_path,
@@ -117,8 +126,9 @@ def build_wm811k_processed_dataset(
             compression=compression,
             chunks_enabled=chunks_enabled,
             samples_per_chunk=samples_per_chunk,
-        ),
-        "unlabeled": _build_wm811k_subset(
+        )
+    if "unlabeled" in selected_subsets:
+        artifacts["unlabeled"] = _build_wm811k_subset(
             subset_name="unlabeled",
             subset_df=unlabeled_df,
             interim_h5_path=interim_h5_path,
@@ -127,8 +137,7 @@ def build_wm811k_processed_dataset(
             compression=compression,
             chunks_enabled=chunks_enabled,
             samples_per_chunk=samples_per_chunk,
-        ),
-    }
+        )
     return artifacts
 
 
