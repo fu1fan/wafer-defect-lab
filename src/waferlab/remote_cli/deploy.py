@@ -5,15 +5,19 @@ from __future__ import annotations
 import argparse
 
 from .common import (
+    MAXIMUM_SUPPORTED_CUDA,
     RemoteState,
     default_remote_env,
+    detect_remote_cuda_version,
     ensure_remote_dirs,
     env_prefix,
+    install_remote_torch,
     merge_deployment_overrides,
     print_command_summary,
     q,
     remote_run,
     save_state,
+    select_torch_spec,
     shell_join,
     state_exists,
     sync_project_code,
@@ -31,6 +35,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--python-bin", default=None, help="Remote Python executable")
     parser.add_argument("--bootstrap-cmd", default=None, help="Remote environment bootstrap command")
     parser.add_argument("--local-report-root", default=None, help="Local directory used for downloaded remote reports")
+    parser.add_argument("--skip-torch-install", action="store_true", help="Do not auto-install torch/torchvision")
     parser.add_argument("--skip-sync", action="store_true", help="Do not rsync the local repo to the remote host")
     parser.add_argument("--skip-bootstrap", action="store_true", help="Do not run the remote bootstrap command")
     parser.add_argument("--prepare-data", action="store_true", help="Run prepare_data.py on the remote host")
@@ -90,6 +95,23 @@ def main() -> int:
             config,
             f"cd {q(config.project_root)} && bash -lc {q(config.bootstrap_cmd)}",
         )
+        if not args.skip_torch_install:
+            cuda_version = detect_remote_cuda_version(config)
+            torch_spec = select_torch_spec(cuda_version)
+            if cuda_version is None:
+                cuda_label = "no GPU detected"
+            elif cuda_version > MAXIMUM_SUPPORTED_CUDA:
+                cuda_label = (
+                    f"CUDA {cuda_version:.1f} detected, "
+                    f"capped to supported wheel set {torch_spec.label}"
+                )
+            else:
+                cuda_label = torch_spec.label
+            print(
+                "Installing PyTorch for remote host: "
+                f"{cuda_label} -> torch=={torch_spec.torch}, torchvision=={torch_spec.torchvision}"
+            )
+            install_remote_torch(config, torch_spec)
 
     env_map = default_remote_env(config)
     if args.prepare_data:

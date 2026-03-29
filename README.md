@@ -86,8 +86,12 @@ wafer-defect-lab/
 
 ```bash
 conda activate torch
-pip install -r requirements.txt -r requirements-cu128.txt
+pip install -r requirements.txt
 ```
+
+这里的 `requirements.txt` 只包含项目基础依赖，不再写死 `torch` / `torchvision` 版本：
+- 本地开发建议直接在你已有的 CUDA/conda 环境里安装合适的 PyTorch
+- 远端机器则交给 `scripts-remote/deploy.py` 自动选择并安装兼容的最新组合
 
 本地训练默认采用 `device=auto`：
 - 本机有 CUDA 时优先使用 GPU
@@ -172,38 +176,12 @@ make smoke-test
 make eval
 ```
 
-### 2. Docker / 远程 GPU 训练线
-
-容器基座固定为官方镜像：
-
-```text
-pytorch/pytorch:2.9.1-cuda12.8-cudnn9-runtime
-```
-
-项目现在分成两层镜像：
-- `ghcr.io/<owner>/wafer-defect-lab-base:cu128`：稳定的 PyTorch + CUDA + Python 依赖层
-- `ghcr.io/<owner>/wafer-defect-lab:<tag>`：轻量的项目代码层
-
-运行镜像不包含 `data/` 与 `outputs/`。这两部分通过挂载目录注入。
-
-本地构建镜像：
-
-```bash
-make docker-build
-```
-
-在本机通过 Docker 运行训练：
-
-```bash
-make docker-train-local
-```
-
-这个本地 Docker 入口也会优先申请 GPU；如果宿主机没有可见的 NVIDIA 环境，则直接以 CPU 方式启动容器。
+### 2. 远程 GPU 训练线
 
 远程控制脚本已经迁移到 `scripts-remote/`，并改成 Python CLI。现在按三类职责拆分：
 - `scripts-remote/deploy.py`：部署代码与环境，并可选远端下载/处理数据
-- `scripts-remote/train.py`：按配置启动远端训练，训练完成后自动拉回报告
-- `scripts-remote/fetch_weights.py`：按需下载权重文件
+- `scripts-remote/remote-run.py`：先同步代码，再在远端执行任意 `scripts/` 下脚本，并把小文件结果直接回写到本地 `outputs/`
+- `scripts-remote/fetch_all_output.py`：按需补拉完整输出目录，包括大文件
 
 推荐先部署，再训练：
 
@@ -224,7 +202,15 @@ make remote-train \
 ```
 
 ```bash
-make remote-fetch-weights PATTERN="best.pt"
+make remote-run \
+  HOST=root@host \
+  PORT=20277 \
+  SCRIPT=scripts/eval_classifier.py \
+  ARGS="--checkpoint outputs/runs/run-20260330-120000/best.pt"
+```
+
+```bash
+make remote-fetch-all-output RUN_ID=run-20260330-120000
 ```
 
 这套 Python CLI 现在优先针对 Vast.ai / Runpod 这类“SSH 进去已经在容器/工作空间里”的远端 shell 模式，不再依赖 Docker in Docker。
@@ -233,34 +219,41 @@ make remote-fetch-weights PATTERN="best.pt"
 
 ```bash
 python3 -m venv /workspace/waferlab-venv
-/workspace/waferlab-venv/bin/pip install --no-cache-dir -r requirements.txt -r requirements-cu128.txt
+/workspace/waferlab-venv/bin/pip install --no-cache-dir -r requirements.txt
 ```
 
-也可以通过 `REMOTE_BOOTSTRAP_CMD=...` 覆盖。
+随后会自动探测远端 `nvidia-smi` 暴露出来的 CUDA 版本，并安装当前支持矩阵里最新的 PyTorch 组合：
+- CUDA 13.0: `torch==2.10.0`, `torchvision==0.25.0`
+- CUDA 12.8: `torch==2.10.0`, `torchvision==0.25.0`
+- CUDA 12.6: `torch==2.10.0`, `torchvision==0.25.0`
+- CUDA 12.4: `torch==2.6.0`, `torchvision==0.21.0`
+- 未检测到可用 GPU: CPU 版 `torch==2.10.0`, `torchvision==0.25.0`
+
+也可以通过 `REMOTE_BOOTSTRAP_CMD=...` 覆盖，或传 `--skip-torch-install` 跳过自动安装。
 
 `remote-train` 会：
+- 先把本地代码与配置同步到远端项目目录
 - 根据你选择的训练配置和附加参数运行 `scripts/train_classifier.py`
 - 在本地实时跟随远端训练日志
-- 训练结束后自动同步小报告到本地 `outputs/remote/<run_id>/`
+- 训练结束后按 `SYNC_MAX_SIZE` 限制把远端 `outputs/` 中的小文件直接同步回本地 `outputs/`
 
-当前远端兼容基线已回退到更保守的组合：
-- `torch==2.9.1`
-- `torchvision==0.24.1`
-- `CUDA 12.8`
+如果你想执行任意远端脚本，可以直接调用：
 
-这样比 `torch 2.11 + CUDA 13` 更容易匹配现有的 R570 驱动环境。
-
-### GitHub Actions 镜像发布
-
-仓库包含 GitHub Actions 工作流，会在 `main` 分支推送或手动触发时构建并推送镜像到 GHCR：
-
-```text
-.github/workflows/docker-image.yml
+```bash
+python scripts-remote/remote-run.py scripts/train_classifier.py -- --smoke-test
+python scripts-remote/remote-run.py scripts/eval_classifier.py -- --checkpoint outputs/runs/run-20260330-120000/best.pt
 ```
 
-镜像标签包含分支、tag、commit SHA 和默认分支的 `latest`。
+默认情况下，`remote-run.py` 会把小于 `32m` 的文件从远端 `outputs/` 回写到本地 `outputs/`。需要补拉大文件时，再执行：
 
----
+```bash
+python scripts-remote/fetch_all_output.py --run-id run-20260330-120000
+python scripts-remote/fetch_all_output.py --all
+```
+
+这套自动选择策略的依据来自 PyTorch 官方 previous versions 页面，当前已经覆盖你手头的两类主机：
+- `CUDA 12.8`
+- `CUDA 13.0`
 
 ## 后续计划
 
