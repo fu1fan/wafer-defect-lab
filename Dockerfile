@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.4
-ARG BASE_IMAGE=ghcr.io/fu1fan/wafer-defect-lab-base:cu130
+ARG BASE_IMAGE=ghcr.io/fu1fan/wafer-defect-lab-base:cu128
 FROM ${BASE_IMAGE}
 
 COPY --link src ./src

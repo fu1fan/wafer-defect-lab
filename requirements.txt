@@ -5,7 +5,6 @@ h5py
 pyarrow
 PyYAML
 
-# Training & model dependencies
-torch
-torchvision
+# Training & model dependencies are versioned separately so Docker and
+# container-shell remotes can pin a CUDA build that matches their driver.
 matplotlib
