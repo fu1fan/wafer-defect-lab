@@ -31,6 +31,7 @@ from waferlab.models.classifier import (
     FAILURE_TYPE_TO_IDX,
     build_classifier,
 )
+from waferlab.runtime import resolve_device, resolve_processed_root
 from waferlab.engine.evaluator import evaluate
 from waferlab.metrics.classification import compute_metrics, format_metrics
 
@@ -56,7 +57,7 @@ def parse_args() -> argparse.Namespace:
         default=PROJECT_ROOT / "configs" / "train" / "wm811k_resnet_baseline.yaml",
     )
     p.add_argument("--task-mode", choices=["binary", "multiclass"], default=None)
-    p.add_argument("--device", type=str, default="cuda")
+    p.add_argument("--device", type=str, default="auto")
     p.add_argument("--output-dir", type=Path, default=None,
                    help="Where to save evaluation results (default: checkpoint dir)")
     p.add_argument("--split", choices=["Training", "Test", "all"], default="Test",
@@ -68,6 +69,7 @@ def main() -> int:
     args = parse_args()
     config = _load_config(args.config)
     task_mode = args.task_mode or config.get("task_mode", "binary")
+    device = resolve_device(args.device)
 
     model_cfg = config.get("model", {})
     if task_mode == "binary":
@@ -89,7 +91,7 @@ def main() -> int:
     print(f"Task mode: {task_mode}  |  Classes: {model_cfg['num_classes']}")
 
     # Build eval dataset.
-    processed_root = PROJECT_ROOT / "data" / "processed"
+    processed_root = resolve_processed_root(PROJECT_ROOT)
     include_meta = task_mode == "multiclass"
     transforms = [InjectFailureTypeIdx()] if task_mode == "multiclass" else None
 
@@ -128,7 +130,7 @@ def main() -> int:
     print(f"Eval samples: {len(eval_ds)}  (split={args.split})")
 
     # Run evaluation.
-    results = evaluate(model, eval_loader, device=args.device, task_mode=task_mode)
+    results = evaluate(model, eval_loader, device=device, task_mode=task_mode)
     metrics = compute_metrics(results["y_true"], results["y_pred"], class_names=class_names)
 
     print("\n" + format_metrics(metrics))

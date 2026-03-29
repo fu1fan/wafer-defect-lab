@@ -34,6 +34,7 @@ from torch.utils.data import DataLoader, Subset
 
 from waferlab.data.datasets import WM811KProcessedDataset
 from waferlab.models.classifier import FAILURE_TYPE_TO_IDX, build_classifier
+from waferlab.runtime import resolve_device, resolve_output_root, resolve_processed_root
 from waferlab.engine.trainer import Trainer
 
 
@@ -177,9 +178,9 @@ def parse_args() -> argparse.Namespace:
                    help="Override task_mode in config")
     p.add_argument("--epochs", type=int, default=None, help="Override epoch count")
     p.add_argument("--lr", type=float, default=None, help="Learning-rate override")
-    p.add_argument("--device", type=str, default="cuda")
-    p.add_argument("--output-dir", type=Path,
-                   default=PROJECT_ROOT / "outputs" / "wm811k_resnet_baseline")
+    p.add_argument("--device", type=str, default="auto")
+    p.add_argument("--output-dir", type=Path, default=None,
+                   help="Where to save checkpoints (default: $WAFERLAB_OUTPUT_ROOT/...)")
     p.add_argument("--smoke-test", action="store_true",
                    help="Run 1 epoch on a tiny subset for quick validation")
     return p.parse_args()
@@ -189,6 +190,7 @@ def main() -> int:
     args = parse_args()
     config = _load_config(args.config)
     task_mode = args.task_mode or config.get("task_mode", "binary")
+    device = resolve_device(args.device)
 
     # CLI overrides.
     train_cfg = config.setdefault("train", {})
@@ -199,6 +201,9 @@ def main() -> int:
     if args.smoke_test:
         train_cfg["epochs"] = 1
         train_cfg["log_interval"] = 10
+
+    default_output_dir = resolve_output_root(PROJECT_ROOT) / "wm811k_resnet_baseline"
+    output_dir = args.output_dir or default_output_dir
 
     # Determine num_classes from task mode.
     model_cfg = config.get("model", {})
@@ -211,12 +216,12 @@ def main() -> int:
     print(f"Model     : {model_cfg.get('arch', 'resnet18')}")
     print(f"Classes   : {model_cfg['num_classes']}")
     print(f"Epochs    : {train_cfg.get('epochs', 30)}")
-    print(f"Device    : {args.device}")
-    print(f"Output    : {args.output_dir}")
+    print(f"Device    : {device}")
+    print(f"Output    : {output_dir}")
     print()
 
     # Build components.
-    processed_root = PROJECT_ROOT / "data" / "processed"
+    processed_root = resolve_processed_root(PROJECT_ROOT)
     train_loader, val_loader = _build_datasets(
         config, task_mode, processed_root, smoke_test=args.smoke_test,
     )
@@ -228,15 +233,15 @@ def main() -> int:
     model = build_classifier(model_cfg)
     trainer = Trainer(
         model, train_loader, val_loader, train_cfg,
-        device=args.device,
-        output_dir=args.output_dir,
+        device=device,
+        output_dir=output_dir,
         task_mode=task_mode,
     )
 
     history = trainer.fit()
 
     # Save training history as JSON for later analysis.
-    history_path = args.output_dir / "history.json"
+    history_path = output_dir / "history.json"
     with history_path.open("w", encoding="utf-8") as f:
         json.dump(history, f, indent=2)
     print(f"\nTraining history saved to {history_path}")

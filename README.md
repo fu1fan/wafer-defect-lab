@@ -89,6 +89,17 @@ conda activate torch
 pip install -r requirements.txt
 ```
 
+本地训练默认采用 `device=auto`：
+- 本机有 CUDA 时优先使用 GPU
+- 没有 CUDA 时自动降级到 CPU
+
+也可以通过环境变量切换数据与输出根目录：
+
+```bash
+export WAFERLAB_DATA_ROOT=/abs/path/to/data
+export WAFERLAB_OUTPUT_ROOT=/abs/path/to/outputs
+```
+
 ### 数据准备（如已有 processed artifacts 可跳过）
 
 ```bash
@@ -107,6 +118,12 @@ python scripts/train_classifier.py --task-mode multiclass
 
 # 快速验证（1 epoch, 256 samples）
 python scripts/train_classifier.py --smoke-test
+```
+
+也可以使用封装脚本：
+
+```bash
+bash scripts/run_train.sh --smoke-test
 ```
 
 ### 评估
@@ -138,6 +155,68 @@ python scripts/visualize_cam.py --checkpoint outputs/wm811k_resnet_baseline/best
 | `model.pretrained` | 是否加载 ImageNet 预训练权重 |
 | `model.dropout` | FC 层前的 dropout |
 | `data.augment` | 仅支持 wafer-safe 的空间增强（flip, rotate90） |
+
+---
+
+## 双线开发工作流
+
+项目现在支持两条并行工作线，共用同一套 Python 入口和路径约定。
+
+### 1. 本地原生开发线
+
+适合日常写代码、跑 smoke test、快速评估：
+
+```bash
+make train
+make smoke-test
+make eval
+```
+
+### 2. Docker / 远程 GPU 训练线
+
+容器基座固定为官方镜像：
+
+```text
+pytorch/pytorch:2.10.0-cuda13.0-cudnn9-runtime
+```
+
+容器镜像只包含代码和运行依赖，不包含 `data/` 与 `outputs/`。这两部分通过挂载目录注入。
+
+本地构建镜像：
+
+```bash
+make docker-build
+```
+
+在本机通过 Docker 运行训练：
+
+```bash
+make docker-train-local
+```
+
+这个本地 Docker 入口也会优先申请 GPU；如果宿主机没有可见的 NVIDIA 环境，则直接以 CPU 方式启动容器。
+
+通过 SSH 在远程 GPU 主机启动训练：
+
+```bash
+make remote-train HOST=user@server IMAGE=ghcr.io/<owner>/<repo>:latest ARGS="--smoke-test"
+```
+
+把远程训练产物拉回本地：
+
+```bash
+make fetch-outputs HOST=user@server SUBDIR=wm811k_resnet_baseline
+```
+
+### GitHub Actions 镜像发布
+
+仓库包含 GitHub Actions 工作流，会在 `main` 分支推送或手动触发时构建并推送镜像到 GHCR：
+
+```text
+.github/workflows/docker-image.yml
+```
+
+镜像标签包含分支、tag、commit SHA 和默认分支的 `latest`。
 
 ---
 

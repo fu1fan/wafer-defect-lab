@@ -1,0 +1,7 @@
+kagglehub
+numpy
+pandas
+h5py
+pyarrow
+PyYAML
+matplotlib

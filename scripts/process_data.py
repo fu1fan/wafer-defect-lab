@@ -12,6 +12,7 @@ SRC_PATH = PROJECT_ROOT / "src"
 sys.path.insert(0, str(SRC_PATH))
 
 from waferlab.data.processed import build_processed_dataset, load_data_config  # noqa: E402
+from waferlab.runtime import resolve_interim_root, resolve_processed_root  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -40,8 +41,8 @@ def main() -> int:
         print("[error] `dataset_name` is required in the config file.", file=sys.stderr)
         return 2
 
-    interim_root = PROJECT_ROOT / "data" / "interim"
-    processed_root = PROJECT_ROOT / "data" / "processed"
+    interim_root = resolve_interim_root(PROJECT_ROOT)
+    processed_root = resolve_processed_root(PROJECT_ROOT)
 
     print(f"[process] Dataset: {dataset_name}")
     print(f"[process] Config: {args.config}")

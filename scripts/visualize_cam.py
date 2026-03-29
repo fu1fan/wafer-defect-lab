@@ -30,6 +30,7 @@ from torch.utils.data import DataLoader, Subset
 
 from waferlab.data.datasets import WM811KProcessedDataset
 from waferlab.models.classifier import FAILURE_TYPE_NAMES, FAILURE_TYPE_TO_IDX, build_classifier
+from waferlab.runtime import resolve_device, resolve_processed_root
 from waferlab.visualize.cam import GradCAM
 
 
@@ -45,7 +46,7 @@ def parse_args() -> argparse.Namespace:
                    default=PROJECT_ROOT / "configs" / "train" / "wm811k_resnet_baseline.yaml")
     p.add_argument("--task-mode", choices=["binary", "multiclass"], default=None)
     p.add_argument("--num-samples", type=int, default=16)
-    p.add_argument("--device", type=str, default="cuda")
+    p.add_argument("--device", type=str, default="auto")
     p.add_argument("--output-dir", type=Path, default=None)
     p.add_argument("--split", choices=["Training", "Test", "all"], default="Test")
     p.add_argument("--only-abnormal", action="store_true",
@@ -147,7 +148,7 @@ def main() -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Load model.
-    device = args.device if torch.cuda.is_available() else "cpu"
+    device = resolve_device(args.device)
     model = build_classifier(model_cfg)
     ckpt = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
     model.load_state_dict(ckpt["model_state_dict"])
@@ -156,7 +157,7 @@ def main() -> int:
     print(f"Loaded checkpoint: {args.checkpoint}")
 
     # Build dataset.
-    processed_root = PROJECT_ROOT / "data" / "processed"
+    processed_root = resolve_processed_root(PROJECT_ROOT)
     filters: dict = {}
     if args.split != "all":
         filters["split_label"] = args.split

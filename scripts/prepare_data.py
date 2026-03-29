@@ -29,6 +29,7 @@ SRC_PATH = PROJECT_ROOT / "src"
 sys.path.insert(0, str(SRC_PATH))
 
 from waferlab.data import build_interim_dataset, download_dataset, resolve_dataset_names  # noqa: E402
+from waferlab.runtime import resolve_interim_root, resolve_raw_root  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -52,8 +53,8 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    output_root = PROJECT_ROOT / "data" / "raw"
-    interim_root = PROJECT_ROOT / "data" / "interim"
+    output_root = resolve_raw_root(PROJECT_ROOT)
+    interim_root = resolve_interim_root(PROJECT_ROOT)
 
     print("[STEP1] Starting data download...")
 
