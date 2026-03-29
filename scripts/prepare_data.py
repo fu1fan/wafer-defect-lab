@@ -6,7 +6,7 @@ Downloads and organizes the required Kaggle datasets. Future data preparation
 steps (e.g. normalization, train/val splitting) will be added here.
 
 Dependencies:
-    pip install kagglehub
+    pip install -r requirements.txt
 
 Before first use, configure Kaggle credentials, for example:
     export KAGGLE_USERNAME=...
@@ -28,8 +28,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SRC_PATH = PROJECT_ROOT / "src"
 sys.path.insert(0, str(SRC_PATH))
 
-from waferlab.data import resolve_dataset_names, download_dataset  # noqa: E402
-from waferlab.data.pandas_compat import read_legacy_pickle  # noqa: E402
+from waferlab.data import build_interim_dataset, download_dataset, resolve_dataset_names  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -54,6 +53,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     output_root = PROJECT_ROOT / "data" / "raw"
+    interim_root = PROJECT_ROOT / "data" / "interim"
 
     print("[STEP1] Starting data download...")
 
@@ -74,13 +74,21 @@ def main() -> int:
             print(f"[error] {exc}", file=sys.stderr)
             return 1
         
-    # WM811K 预处理
-    if "WM-811K" in dataset_names:
-        print("[STEP2] Loading WM-811K with legacy pickle compatibility...")
-        df = read_legacy_pickle(output_root / "wm811k" / "LSWMD.pkl")
-        print(f"[done] WM-811K loaded successfully: {df.shape}")
-    else:
-        print("[STEP2] Skipping pandas patch (WM-811K not requested)")
+    print("[STEP2] Building interim datasets...")
+    for dataset_name in dataset_names:
+        try:
+            build_interim_dataset(
+                dataset_name,
+                raw_root=output_root,
+                interim_root=interim_root,
+                force=args.force,
+            )
+        except Exception as exc:
+            print(
+                f"[error] Failed to build {dataset_name} interim dataset: {exc}",
+                file=sys.stderr,
+            )
+            return 1
 
     print("All datasets processed successfully.")
     return 0
