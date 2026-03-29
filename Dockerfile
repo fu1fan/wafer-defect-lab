@@ -1,9 +1,10 @@
+# syntax=docker/dockerfile:1.4
 ARG BASE_IMAGE=ghcr.io/fu1fan/wafer-defect-lab-base:cu130
 FROM ${BASE_IMAGE}
 
-COPY src ./src
-COPY scripts ./scripts
-COPY configs ./configs
-COPY README.md ./
+COPY --link src ./src
+COPY --link scripts ./scripts
+COPY --link configs ./configs
+COPY --link README.md ./
 
 CMD ["python", "scripts/train_classifier.py"]
