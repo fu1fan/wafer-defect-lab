@@ -180,7 +180,11 @@ make eval
 pytorch/pytorch:2.10.0-cuda13.0-cudnn9-runtime
 ```
 
-容器镜像只包含代码和运行依赖，不包含 `data/` 与 `outputs/`。这两部分通过挂载目录注入。
+项目现在分成两层镜像：
+- `ghcr.io/<owner>/wafer-defect-lab-base:cu130`：稳定的 PyTorch + CUDA + Python 依赖层
+- `ghcr.io/<owner>/wafer-defect-lab:<tag>`：轻量的项目代码层
+
+运行镜像不包含 `data/` 与 `outputs/`。这两部分通过挂载目录注入。
 
 本地构建镜像：
 
