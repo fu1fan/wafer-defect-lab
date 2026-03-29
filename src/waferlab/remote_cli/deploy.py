@@ -185,6 +185,79 @@ except Exception as exc:
     _run_remote(config, remote_command)
 
 
+def _probe_bootstrap_python(config) -> str:
+    bootstrap_candidates: list[str] = []
+    seen: set[str] = set()
+    for candidate in (
+        config.python_bin,
+        "python3",
+        "python",
+        "/venv/main/bin/python3.12",
+        "/venv/main/bin/python3",
+        "/venv/bin/python3",
+        "/venv/bin/python",
+        "/usr/bin/python3",
+        "/usr/local/bin/python3",
+        "/opt/conda/bin/python",
+        "/opt/miniforge3/bin/python",
+        "/opt/miniconda3/bin/python",
+        "/root/miniconda3/bin/python",
+        "/root/miniforge3/bin/python",
+        "/workspace/.venv/bin/python",
+        "/workspace/venv/bin/python",
+    ):
+        if not candidate or candidate in seen:
+            continue
+        seen.add(candidate)
+        bootstrap_candidates.append(candidate)
+
+    probe_script = (
+        "set -eu\n"
+        "for candidate in \\\n"
+        + " \\\n".join(f"  {q(candidate)}" for candidate in bootstrap_candidates)
+        + "\n"
+        "do\n"
+        "  if command -v \"$candidate\" >/dev/null 2>&1; then\n"
+        "    command -v \"$candidate\"\n"
+        "    exit 0\n"
+        "  fi\n"
+        "  if [ -x \"$candidate\" ]; then\n"
+        "    printf '%s\\n' \"$candidate\"\n"
+        "    exit 0\n"
+        "  fi\n"
+        "done\n"
+        "exit 1"
+    )
+    remote_command = _shell_render(["sh", "-lc", probe_script])
+    ssh_command = ssh_base(config) + [remote_command]
+    _print_tagged("runcmd", f" ssh {config.host} {remote_command}")
+    result = subprocess.run(
+        ssh_command,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    for line in result.stdout.splitlines():
+        _print_tagged("remote", f" {line}")
+    for line in result.stderr.splitlines():
+        _print_tagged("remote", f" {line}")
+    if result.returncode != 0:
+        attempted = ", ".join(bootstrap_candidates)
+        raise SystemExit(
+            "Failed to find a usable remote Python interpreter for probing. "
+            f"Tried: {attempted}. Pass --python-bin explicitly."
+        )
+    bootstrap_python = result.stdout.strip().splitlines()[-1].strip()
+    if not bootstrap_python:
+        attempted = ", ".join(bootstrap_candidates)
+        raise SystemExit(
+            "Remote Python probe bootstrap did not return an interpreter path. "
+            f"Tried: {attempted}."
+        )
+    print(f"Bootstrap probe interpreter: {bootstrap_python}")
+    return bootstrap_python
+
+
 def _probe_remote_python_candidates(config) -> list[dict[str, str]]:
     probe_script = r"""
 import json
@@ -379,7 +452,8 @@ for path, source in candidates:
         info["error"] = f"{exc.__class__.__name__}: {exc}"
     print(json.dumps(info, ensure_ascii=True))
 """.strip()
-    remote_command = _shell_render(["python3", "-c", probe_script])
+    bootstrap_python = _probe_bootstrap_python(config)
+    remote_command = _shell_render([bootstrap_python, "-c", probe_script])
     ssh_command = ssh_base(config) + [remote_command]
     _print_tagged("runcmd", f" ssh {config.host} {remote_command}")
     process = subprocess.Popen(

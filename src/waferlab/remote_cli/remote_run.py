@@ -177,10 +177,11 @@ def main() -> int:
         )
 
     env_map = default_remote_env(config)
+    env_map["PYTHONUNBUFFERED"] = "1"
     remote_command = (
         f"cd {q(config.project_root)} && "
         f"{env_prefix(env_map)} "
-        f"{shell_join([config.python_bin, remote_script_path, *remote_script_args])}"
+        f"{shell_join([config.python_bin, '-u', remote_script_path, *remote_script_args])}"
     )
     ssh_command = ssh_base(config) + [remote_command]
     _stream_remote_command(config.host, ssh_command, remote_command)

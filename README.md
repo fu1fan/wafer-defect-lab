@@ -183,40 +183,46 @@ make eval
 - `scripts-remote/remote_run.py`：先同步代码，再在远端执行任意 `scripts/` 下脚本，并把小文件结果直接回写到本地 `outputs/`
 - `scripts-remote/fetch_all_output.py`：按需补拉完整输出目录，包括大文件
 
-推荐先部署，再按需要分别运行数据准备、预处理和训练：
+开始之前，请先配置好 SSH 密钥免密登录。当前远程工作流默认通过 `ssh` / `rsync` 直接访问远端主机，如果还需要手动输入密码，部署、同步代码和回传输出时都容易卡在交互提示上。
+
+建议先确认下面这条命令可以直接登录成功且不要求输入密码：
+
+```bash
+ssh -p 20277 root@host
+```
+
+推荐用 `remote-deploy` 一步完成部署 + 数据下载 + 数据预处理，再运行训练：
 
 ```bash
 make remote-deploy \
   HOST=root@host \
-  PORT=20277
-```
-
-```bash
-make remote-prepare-data \
-  HOST=root@host \
   PORT=20277 \
-  DATASET=WM-811K
-```
-
-```bash
-make remote-process-data \
-  HOST=root@host \
-  PORT=20277 \
+  PREPARE_DATA=1 \
   PROCESS_SUBSETS="labeled"
+```
+
+`PREPARE_DATA=1` 会在部署结束后自动在远端执行 `scripts/prepare_data.py`（下载数据集，默认 `DATASET=WM-811K`）；`PROCESS_SUBSETS="labeled"` 则继续执行 `scripts/process_data.py --subset labeled`，生成 224×224 processed HDF5。
+
+如果数据已经就绪、或想单独重跑某一步，也可以分步执行：
+
+```bash
+# 单独跑数据下载
+make remote-prepare-data
+```
+
+```bash
+# 单独跑处理
+make remote-process-data
 ```
 
 ```bash
 make remote-train \
-  HOST=root@host \
-  PORT=20277 \
   CONFIG=configs/train/wm811k_resnet_baseline.yaml \
   ARGS="--smoke-test"
 ```
 
 ```bash
 make remote-run \
-  HOST=root@host \
-  PORT=20277 \
   SCRIPT=scripts/eval_classifier.py \
   ARGS="--checkpoint outputs/runs/run-20260330-120000/best.pt"
 ```
@@ -263,7 +269,7 @@ make remote-deploy \
 - CUDA 12.4: `torch==2.6.0`, `torchvision==0.21.0`
 - 未检测到可用 GPU: CPU 版 `torch==2.10.0`, `torchvision==0.25.0`
 
-也可以通过 `REMOTE_BOOTSTRAP_CMD=...` 覆盖，或在 `venv` 模式下传 `--skip-torch-install` 跳过自动安装。
+也可以通过 `REMOTE_BOOTSTRAP_CMD=...` 覆盖，或在 `venv` 模式下加 `SKIP_TORCH_INSTALL=1` 跳过自动安装。
 
 如果你已经知道远端要用哪个解释器，也可以直接指定：
 
