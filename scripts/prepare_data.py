@@ -73,6 +73,14 @@ def main() -> int:
         except Exception as exc:
             print(f"[error] {exc}", file=sys.stderr)
             return 1
+        
+    # WM811K 预处理
+    if "WM-811K" in dataset_names:
+        print("[STEP2] Loading WM-811K with legacy pickle compatibility...")
+        df = read_legacy_pickle(output_root / "wm811k" / "LSWMD.pkl")
+        print(f"[done] WM-811K loaded successfully: {df.shape}")
+    else:
+        print("[STEP2] Skipping pandas patch (WM-811K not requested)")
 
     print("All datasets processed successfully.")
     return 0
