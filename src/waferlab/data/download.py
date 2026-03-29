@@ -5,13 +5,6 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-try:
-    import kagglehub
-except ImportError as exc:
-    raise SystemExit(
-        "`kagglehub` is not installed. Please run `pip install -r requirements.txt`."
-    ) from exc
-
 
 DATASETS: dict[str, dict[str, str]] = {
     "WM-811K": {
@@ -61,6 +54,13 @@ def download_dataset(dataset_name: str, output_root: Path, force: bool = False) 
     Skips if the target directory already exists and is non-empty (unless *force*).
     Returns the path to the downloaded dataset directory.
     """
+    try:
+        import kagglehub
+    except ImportError as exc:
+        raise RuntimeError(
+            "`kagglehub` is not installed. Please run `pip install -r requirements.txt`."
+        ) from exc
+
     dataset_meta = DATASETS[dataset_name]
     target_dir = output_root / dataset_meta["target_dir"]
 

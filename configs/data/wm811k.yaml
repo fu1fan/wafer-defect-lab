@@ -1,0 +1,19 @@
+dataset_name: wm811k
+
+# Resampling mode for wafer maps and masks.
+# `nearest` is recommended because wafer values are discrete labels (0/1/2),
+# not continuous image intensities.
+resize_mode: nearest
+
+storage:
+  # HDF5 compression for the processed wafer maps.
+  # `lzf` is a lightweight choice that usually saves space without hurting training I/O too much.
+  compression: lzf
+
+  chunks:
+    # Enable chunked storage so HDF5 can compress the dataset and read it by sample groups.
+    enabled: true
+
+    # Number of samples stored per chunk along the batch dimension.
+    # A value near the training batch size is usually a good starting point.
+    samples_per_chunk: 64
