@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 from collections.abc import Sized
+from datetime import datetime
 from pathlib import Path
 
 import yaml
@@ -112,7 +113,7 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Train wafer-level classifier")
     p.add_argument(
         "--config", type=Path,
-        default=PROJECT_ROOT / "configs" / "train" / "wm811k_resnet_baseline.yaml",
+        default=PROJECT_ROOT / "configs" / "train" / "wm811k.yaml",
     )
     p.add_argument("--task-mode", choices=["binary", "multiclass"], default=None,
                    help="Override task_mode in config")
@@ -148,15 +149,17 @@ def main() -> int:
         train_cfg["epochs"] = 1
         train_cfg["log_interval"] = 10
 
-    default_output_dir = resolve_output_root(PROJECT_ROOT) / "wm811k_resnet_baseline"
-    output_dir = args.output_dir or default_output_dir
-
     # Determine num_classes from task mode.
     model_cfg = config.get("model", {})
     if task_mode == "binary":
         model_cfg["num_classes"] = 2
     else:
         model_cfg["num_classes"] = len(FAILURE_TYPE_TO_IDX)
+
+    arch = model_cfg.get("arch", "resnet18")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    default_output_dir = resolve_output_root(PROJECT_ROOT) / f"{arch}_{task_mode}_{timestamp}"
+    output_dir = args.output_dir or default_output_dir
 
     print(f"Task mode : {task_mode}")
     print(f"Model     : {model_cfg.get('arch', 'resnet18')}")

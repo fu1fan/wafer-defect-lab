@@ -1,5 +1,9 @@
-# ── WM-811K ResNet baseline ──────────────────────────────────────────
-# First-phase wafer-level classification experiment.
+# ── WM-811K training config ───────────────────────────────────────────
+# Unified config for WM-811K experiments.
+#
+# Sections:
+#   task_mode / model / train / data  – classifier training (train_classifier.py)
+#   anomaly_dataloader                – anomaly-detection dataloaders (future use)
 #
 # Task modes:
 #   binary     – normal (0) vs abnormal (1)
@@ -45,3 +49,39 @@ data:
   augment:
     random_flip: true       # horizontal + vertical
     random_rotate90: true   # 0 / 90 / 180 / 270 degrees
+
+
+# ── Anomaly-detection dataloader config ──────────────────────────────
+# Used by future anomaly-detection pipelines (PaDiM, PatchCore, etc.).
+# Not consumed by train_classifier.py.
+# ─────────────────────────────────────────────────────────────────────
+
+anomaly_dataloader:
+  dataset_name: wm811k
+
+  loaders:
+    train:
+      # Use labeled normal wafers only for the first anomaly-detection baseline.
+      subset: labeled
+      filters:
+        is_normal: true
+      batch_size: 64
+      shuffle: true
+      num_workers: 4
+      pin_memory: true
+      drop_last: true
+      return_masks: true
+      return_float: true
+      include_metadata: false
+
+    eval:
+      # Evaluate on the full labeled set: normal + abnormal.
+      subset: labeled
+      batch_size: 64
+      shuffle: false
+      num_workers: 4
+      pin_memory: true
+      drop_last: false
+      return_masks: true
+      return_float: true
+      include_metadata: true
