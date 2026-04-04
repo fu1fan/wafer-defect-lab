@@ -22,7 +22,7 @@ from torch.utils.data import DataLoader
 
 from waferlab.data.datasets import WM811KProcessedDataset
 from waferlab.data.transforms import InjectFailureTypeIdx, compose
-from waferlab.models.classifier import (
+from waferlab.models.resnet import (
     FAILURE_TYPE_NAMES,
     FAILURE_TYPE_TO_IDX,
     build_classifier,

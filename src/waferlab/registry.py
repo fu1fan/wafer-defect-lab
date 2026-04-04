@@ -64,19 +64,19 @@ SCHEDULER_REGISTRY = Registry("scheduler")
 
 @MODEL_REGISTRY.register("resnet18")
 def _build_resnet18(config: dict[str, Any]):
-    from .models.classifier import WaferClassifier
+    from .models.resnet import WaferClassifier
     return WaferClassifier(arch="resnet18", **_classifier_kwargs(config))
 
 
 @MODEL_REGISTRY.register("resnet34")
 def _build_resnet34(config: dict[str, Any]):
-    from .models.classifier import WaferClassifier
+    from .models.resnet import WaferClassifier
     return WaferClassifier(arch="resnet34", **_classifier_kwargs(config))
 
 
 @MODEL_REGISTRY.register("resnet50")
 def _build_resnet50(config: dict[str, Any]):
-    from .models.classifier import WaferClassifier
+    from .models.resnet import WaferClassifier
     return WaferClassifier(arch="resnet50", **_classifier_kwargs(config))
 
 

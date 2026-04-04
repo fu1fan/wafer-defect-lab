@@ -26,7 +26,7 @@ from torch.utils.data import DataLoader, Subset
 
 from waferlab.data.datasets import WM811KProcessedDataset
 from waferlab.data.transforms import WaferAugmentation, InjectFailureTypeIdx, compose
-from waferlab.models.classifier import FAILURE_TYPE_TO_IDX
+from waferlab.models.resnet import FAILURE_TYPE_TO_IDX
 from waferlab.registry import MODEL_REGISTRY
 from waferlab.runtime import resolve_device, resolve_output_root, resolve_processed_root
 from waferlab.engine.trainer import Trainer

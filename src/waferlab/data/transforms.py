@@ -90,7 +90,7 @@ class InjectFailureTypeIdx:
     """
 
     def __init__(self, label_map: dict[str, int] | None = None) -> None:
-        from ..models.classifier import FAILURE_TYPE_TO_IDX
+        from ..models.resnet import FAILURE_TYPE_TO_IDX
         self.label_map = label_map or FAILURE_TYPE_TO_IDX
 
     def __call__(self, sample: dict) -> dict:

@@ -14,7 +14,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from ..models.classifier import WaferClassifier
+from ..models.resnet import WaferClassifier
 
 
 class GradCAM:

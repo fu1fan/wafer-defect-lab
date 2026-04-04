@@ -7,7 +7,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from ..data.transforms import prepare_input, DEFAULT_NORM_SCALE
-from ..models.classifier import WaferClassifier
+from ..models.resnet import WaferClassifier
 
 
 @torch.no_grad()

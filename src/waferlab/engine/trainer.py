@@ -12,7 +12,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from ..data.transforms import prepare_input, DEFAULT_NORM_SCALE
-from ..models.classifier import WaferClassifier
+from ..models.resnet import WaferClassifier
 from ..registry import OPTIMIZER_REGISTRY, SCHEDULER_REGISTRY
 
 

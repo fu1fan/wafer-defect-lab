@@ -25,7 +25,7 @@ from torch.utils.data import DataLoader, Subset
 
 from waferlab.data.datasets import WM811KProcessedDataset
 from waferlab.data.transforms import prepare_input
-from waferlab.models.classifier import FAILURE_TYPE_NAMES, FAILURE_TYPE_TO_IDX, build_classifier
+from waferlab.models.resnet import FAILURE_TYPE_NAMES, FAILURE_TYPE_TO_IDX, build_classifier
 from waferlab.runtime import resolve_device, resolve_processed_root
 from waferlab.visualize.cam import GradCAM
 
