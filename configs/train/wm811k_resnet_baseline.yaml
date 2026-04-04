@@ -9,9 +9,9 @@
 task_mode: binary   # binary | multiclass
 
 model:
-  arch: resnet18
-  in_channels: 1      # 1 = single-channel wafer map; 3 = channel-replicated
-  pretrained: false    # ImageNet init (set in_channels=3 to get full benefit)
+  arch: resnet18       # resnet18 | resnet34 | resnet50 (extensible via registry)
+  in_channels: 1       # 1 = single-channel wafer map; 3 = channel-replicated
+  pretrained: false     # ImageNet init (set in_channels=3 to get full benefit)
   dropout: 0.2
 
 train:
@@ -20,6 +20,19 @@ train:
   weight_decay: 1.0e-4
   grad_clip: 0.0
   log_interval: 100
+  norm_scale: 2.0       # input normalization: x / norm_scale ({0,1,2} -> [0,1])
+
+  # Optimizer selection (extensible via registry)
+  optimizer: adamw      # adamw | sgd
+  # optimizer_args:     # extra kwargs forwarded to the optimizer builder
+  #   momentum: 0.9     # (sgd only)
+
+  # LR scheduler selection (extensible via registry)
+  scheduler: cosine     # cosine | step | none
+  # scheduler_args:     # extra kwargs forwarded to the scheduler builder
+  #   step_size: 10     # (step only)
+  #   gamma: 0.1        # (step only)
+
   # class_weights: [0.15, 1.0]  # uncomment to handle imbalance in binary mode
 
 data:

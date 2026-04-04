@@ -15,23 +15,21 @@ Examples
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 
 import yaml
-
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_PATH = PROJECT_ROOT / "src"
-sys.path.insert(0, str(SRC_PATH))
 
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, Subset
 
 from waferlab.data.datasets import WM811KProcessedDataset
+from waferlab.data.transforms import prepare_input
 from waferlab.models.classifier import FAILURE_TYPE_NAMES, FAILURE_TYPE_TO_IDX, build_classifier
 from waferlab.runtime import resolve_device, resolve_processed_root
 from waferlab.visualize.cam import GradCAM
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _load_config(path: Path) -> dict:
@@ -180,10 +178,8 @@ def main() -> int:
     loader = DataLoader(subset, batch_size=n, shuffle=False, num_workers=0)
 
     batch = next(iter(loader))
-    x = batch["image"].to(device)
-    if model.in_channels == 3 and x.shape[1] == 1:
-        x = x.expand(-1, 3, -1, -1)
-    x_norm = x / 2.0
+    dev = torch.device(device)
+    x_norm = prepare_input(batch, device=dev, target_channels=model.in_channels)
 
     cam = GradCAM(model)
     heatmaps = cam(x_norm)

@@ -18,73 +18,20 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from collections.abc import Sized
 from pathlib import Path
 
 import yaml
-
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_PATH = PROJECT_ROOT / "src"
-sys.path.insert(0, str(SRC_PATH))
-
-import numpy as np
-import torch
 from torch.utils.data import DataLoader, Subset
 
 from waferlab.data.datasets import WM811KProcessedDataset
-from waferlab.models.classifier import FAILURE_TYPE_TO_IDX, build_classifier
+from waferlab.data.transforms import WaferAugmentation, InjectFailureTypeIdx, compose
+from waferlab.models.classifier import FAILURE_TYPE_TO_IDX
+from waferlab.registry import MODEL_REGISTRY
 from waferlab.runtime import resolve_device, resolve_output_root, resolve_processed_root
 from waferlab.engine.trainer import Trainer
 
-
-# ── Augmentation transforms ─────────────────────────────────────────
-
-class WaferAugmentation:
-    """Simple spatial augmentations safe for wafer maps."""
-
-    def __init__(self, *, random_flip: bool = True, random_rotate90: bool = True) -> None:
-        self.random_flip = random_flip
-        self.random_rotate90 = random_rotate90
-
-    def __call__(self, sample: dict) -> dict:
-        img = sample["image"]  # [1, H, W]
-
-        # Decide transforms once so image and masks stay consistent.
-        do_hflip = self.random_flip and torch.rand(1).item() > 0.5
-        do_vflip = self.random_flip and torch.rand(1).item() > 0.5
-        k = int(torch.randint(0, 4, (1,)).item()) if self.random_rotate90 else 0
-
-        img = self._apply(img, do_hflip, do_vflip, k)
-        sample["image"] = img
-
-        for mask_key in ("wafer_mask", "defect_mask"):
-            if mask_key in sample:
-                sample[mask_key] = self._apply(sample[mask_key], do_hflip, do_vflip, k)
-
-        return sample
-
-    @staticmethod
-    def _apply(t: torch.Tensor, hflip: bool, vflip: bool, k: int) -> torch.Tensor:
-        if hflip:
-            t = t.flip(-1)
-        if vflip:
-            t = t.flip(-2)
-        if k > 0:
-            t = torch.rot90(t, k, dims=(-2, -1))
-        return t
-
-
-# ── Multiclass label injection ───────────────────────────────────────
-
-class InjectFailureTypeIdx:
-    """Add ``failure_type_idx`` field for multi-class mode."""
-
-    def __call__(self, sample: dict) -> dict:
-        meta = sample.get("metadata", {})
-        ft = str(meta.get("failure_type", "none"))
-        sample["failure_type_idx"] = FAILURE_TYPE_TO_IDX.get(ft, 0)
-        return sample
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
@@ -116,13 +63,6 @@ def _build_datasets(
     include_meta = task_mode == "multiclass"
     if task_mode == "multiclass":
         transforms_train.append(InjectFailureTypeIdx())
-
-    def compose(fns):
-        def _apply(sample):
-            for fn in fns:
-                sample = fn(sample)
-            return sample
-        return _apply if fns else None
 
     # Train: WM-811K labeled, split_label == "Training"
     train_ds = WM811KProcessedDataset(
@@ -236,7 +176,7 @@ def main() -> int:
     print(f"Train samples: {len(train_dataset if isinstance(train_dataset, Sized) else [])}")
     print(f"Val samples  : {len(val_dataset if isinstance(val_dataset, Sized) else [])}")
 
-    model = build_classifier(model_cfg)
+    model = MODEL_REGISTRY.build(model_cfg.get("arch", "resnet18"), model_cfg)
     trainer = Trainer(
         model, train_loader, val_loader, train_cfg,
         device=device,

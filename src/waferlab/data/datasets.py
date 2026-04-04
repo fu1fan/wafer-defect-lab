@@ -14,7 +14,7 @@ from .interim_io import ensure_h5py
 
 
 class WM811KProcessedDataset(Dataset[dict[str, Any]]):
-    """Read processed WM-811K samples from HDF5 + parquet index artifacts."""
+    """Read processed WM-811K samples from HDF5 + index artifacts."""
 
     def __init__(
         self,
@@ -27,6 +27,8 @@ class WM811KProcessedDataset(Dataset[dict[str, Any]]):
         return_float: bool = True,
         filters: Mapping[str, Any] | None = None,
     ) -> None:
+        self._h5_file: Any | None = None  # init early to avoid __del__ crash
+
         self.processed_root = Path(processed_root)
         self.subset = subset
         self.transform = transform
@@ -37,14 +39,26 @@ class WM811KProcessedDataset(Dataset[dict[str, Any]]):
 
         subset_root = self.processed_root / "wm811k" / subset
         self.h5_path = subset_root / f"wm811k_{subset}_224.h5"
-        self.index_path = subset_root / f"wm811k_{subset}_224_index.parquet"
+
+        # Prefer parquet index; fall back to CSV if unavailable.
+        parquet_path = subset_root / f"wm811k_{subset}_224_index.parquet"
+        csv_path = subset_root / f"wm811k_{subset}_224_index.csv"
+        if parquet_path.exists():
+            self.index_path = parquet_path
+        elif csv_path.exists():
+            self.index_path = csv_path
+        else:
+            raise FileNotFoundError(
+                f"Processed index not found (tried .parquet and .csv): {parquet_path}"
+            )
 
         if not self.h5_path.exists():
             raise FileNotFoundError(f"Processed HDF5 not found: {self.h5_path}")
-        if not self.index_path.exists():
-            raise FileNotFoundError(f"Processed index not found: {self.index_path}")
 
-        self.index_df = pd.read_parquet(self.index_path)
+        if self.index_path.suffix == ".parquet":
+            self.index_df = pd.read_parquet(self.index_path)
+        else:
+            self.index_df = pd.read_csv(self.index_path)
         # Store original HDF5 row indices before filtering so that
         # __getitem__ can fetch the correct row from the HDF5 file.
         self.index_df["_h5_idx"] = np.arange(len(self.index_df), dtype=np.int64)
@@ -95,6 +109,13 @@ class WM811KProcessedDataset(Dataset[dict[str, Any]]):
             except (AttributeError, TypeError):
                 pass
             self._h5_file = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+        return False
 
     def _get_h5_file(self):
         if self._h5_file is None:

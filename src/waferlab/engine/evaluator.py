@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any, Sequence
-
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
+from ..data.transforms import prepare_input, DEFAULT_NORM_SCALE
 from ..models.classifier import WaferClassifier
 
 
@@ -18,6 +17,7 @@ def evaluate(
     *,
     device: str = "cuda",
     task_mode: str = "binary",
+    norm_scale: float = DEFAULT_NORM_SCALE,
 ) -> dict[str, np.ndarray]:
     """Run inference on *loader* and collect predictions.
 
@@ -35,10 +35,12 @@ def evaluate(
     all_ids: list[int] = []
 
     for batch in loader:
-        x = batch["image"].to(dev)
-        if model.in_channels == 3 and x.shape[1] == 1:
-            x = x.expand(-1, 3, -1, -1)
-        x = x / 2.0
+        x = prepare_input(
+            batch,
+            device=dev,
+            target_channels=model.in_channels,
+            norm_scale=norm_scale,
+        )
 
         logits = model(x)
         probs = torch.softmax(logits, dim=1).cpu().numpy()

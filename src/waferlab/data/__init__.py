@@ -9,6 +9,13 @@ from .interim import (
     build_wm811k_interim_dataset,
 )
 from .processed import build_processed_dataset, build_wm811k_processed_dataset, load_data_config
+from .transforms import (
+    WaferAugmentation,
+    InjectFailureTypeIdx,
+    compose,
+    prepare_input,
+    DEFAULT_NORM_SCALE,
+)
 
 __all__ = [
     "DATASETS",
@@ -27,4 +34,9 @@ __all__ = [
     "build_processed_dataset",
     "build_wm811k_processed_dataset",
     "load_data_config",
+    "WaferAugmentation",
+    "InjectFailureTypeIdx",
+    "compose",
+    "prepare_input",
+    "DEFAULT_NORM_SCALE",
 ]

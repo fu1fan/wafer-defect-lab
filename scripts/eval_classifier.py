@@ -12,20 +12,16 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
 
 import yaml
-
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_PATH = PROJECT_ROOT / "src"
-sys.path.insert(0, str(SRC_PATH))
 
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
 from waferlab.data.datasets import WM811KProcessedDataset
+from waferlab.data.transforms import InjectFailureTypeIdx, compose
 from waferlab.models.classifier import (
     FAILURE_TYPE_NAMES,
     FAILURE_TYPE_TO_IDX,
@@ -35,13 +31,7 @@ from waferlab.runtime import resolve_device, resolve_processed_root
 from waferlab.engine.evaluator import evaluate
 from waferlab.metrics.classification import compute_metrics, format_metrics
 
-
-class InjectFailureTypeIdx:
-    def __call__(self, sample: dict) -> dict:
-        meta = sample.get("metadata", {})
-        ft = str(meta.get("failure_type", "none"))
-        sample["failure_type_idx"] = FAILURE_TYPE_TO_IDX.get(ft, 0)
-        return sample
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _load_config(path: Path) -> dict:
@@ -93,16 +83,7 @@ def main() -> int:
     # Build eval dataset.
     processed_root = resolve_processed_root(PROJECT_ROOT)
     include_meta = task_mode == "multiclass"
-    transforms = [InjectFailureTypeIdx()] if task_mode == "multiclass" else None
-
-    def compose(fns):
-        if not fns:
-            return None
-        def _apply(s):
-            for fn in fns:
-                s = fn(s)
-            return s
-        return _apply
+    transforms = [InjectFailureTypeIdx()] if task_mode == "multiclass" else []
 
     filters: dict = {}
     if args.split != "all":

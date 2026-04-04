@@ -23,13 +23,10 @@ import argparse
 import sys
 from pathlib import Path
 
-# Allow importing from src/ without installing the package
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_PATH = PROJECT_ROOT / "src"
-sys.path.insert(0, str(SRC_PATH))
 
-from waferlab.data import build_interim_dataset, download_dataset, resolve_dataset_names  # noqa: E402
-from waferlab.runtime import resolve_interim_root, resolve_raw_root  # noqa: E402
+from waferlab.data import build_interim_dataset, download_dataset, resolve_dataset_names
+from waferlab.runtime import resolve_interim_root, resolve_raw_root
 
 
 def parse_args() -> argparse.Namespace:
