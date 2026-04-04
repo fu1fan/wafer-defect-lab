@@ -22,11 +22,8 @@ from torch.utils.data import DataLoader
 
 from waferlab.data.datasets import WM811KProcessedDataset
 from waferlab.data.transforms import InjectFailureTypeIdx, compose
-from waferlab.models.resnet import (
-    FAILURE_TYPE_NAMES,
-    FAILURE_TYPE_TO_IDX,
-    build_classifier,
-)
+from waferlab.models.resnet import FAILURE_TYPE_NAMES, FAILURE_TYPE_TO_IDX
+from waferlab.registry import MODEL_REGISTRY
 from waferlab.runtime import resolve_device, resolve_processed_root
 from waferlab.engine.evaluator import evaluate
 from waferlab.metrics.classification import compute_metrics, format_metrics
@@ -74,7 +71,7 @@ def main() -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Load model.
-    model = build_classifier(model_cfg)
+    model = MODEL_REGISTRY.build(model_cfg.get("arch", "resnet18"), model_cfg)
     ckpt = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
     model.load_state_dict(ckpt["model_state_dict"])
     print(f"Loaded checkpoint: {args.checkpoint}")
