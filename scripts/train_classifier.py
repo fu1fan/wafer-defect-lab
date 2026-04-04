@@ -158,8 +158,14 @@ def main() -> int:
             run_summary = {
                 "task_mode": task_mode,
                 "model": model_cfg,
-                "train_config": str(args.config.resolve()),
-                "data_config": str(args.data_config.resolve()),
+                "train_config": {
+                    "path": str(args.config.resolve()),
+                    "snapshot": config,
+                },
+                "data_config": {
+                    "path": str(args.data_config.resolve()),
+                    "snapshot": data_config,
+                },
                 "output_dir": str(output_dir.resolve()),
                 "checkpoints": {
                     "best": str((output_dir / "best.pt").resolve()),
@@ -195,8 +201,14 @@ def main() -> int:
     run_summary = {
         "task_mode": task_mode,
         "model": model_cfg,
-        "train_config": str(args.config.resolve()),
-        "data_config": str(args.data_config.resolve()),
+        "train_config": {
+            "path": str(args.config.resolve()),
+            "snapshot": config,
+        },
+        "data_config": {
+            "path": str(args.data_config.resolve()),
+            "snapshot": data_config,
+        },
         "output_dir": str(output_dir.resolve()),
         "checkpoints": {
             "best": str((output_dir / "best.pt").resolve()),
