@@ -126,12 +126,6 @@ python scripts/train_classifier.py --task-mode multiclass
 python scripts/train_classifier.py --smoke-test
 ```
 
-也可以使用封装脚本：
-
-```bash
-bash scripts/run_train.sh --smoke-test
-```
-
 ### 评估
 
 ```bash
