@@ -4,7 +4,7 @@ Usage::
 
     from waferlab.registry import MODEL_REGISTRY, OPTIMIZER_REGISTRY, SCHEDULER_REGISTRY
 
-    # Register a custom model builder
+    # Register a custom model builder (place this in models/xxx.py)
     @MODEL_REGISTRY.register("my_vit")
     def build_my_vit(config):
         ...
@@ -15,15 +15,35 @@ Usage::
 
 from __future__ import annotations
 
+import importlib
 from typing import Any, Callable
 
 
 class Registry:
-    """Name -> factory mapping with a decorator-based registration API."""
+    """Name -> factory mapping with a decorator-based registration API.
 
-    def __init__(self, name: str) -> None:
+    Parameters
+    ----------
+    name : str
+        Human-readable name used in error messages.
+    discover_package : str or None
+        If set, the package will be lazily imported the first time
+        :meth:`build`, :meth:`keys`, or ``in`` is used, which triggers
+        auto-discovery of all modules in that package (and their
+        ``@register`` decorators).
+    """
+
+    def __init__(self, name: str, *, discover_package: str | None = None) -> None:
         self.name = name
         self._registry: dict[str, Callable] = {}
+        self._discover_package = discover_package
+        self._discovered = False
+
+    def _ensure_discovered(self) -> None:
+        """Lazily import *discover_package* to trigger registrations."""
+        if not self._discovered and self._discover_package:
+            self._discovered = True
+            importlib.import_module(self._discover_package)
 
     def register(self, key: str) -> Callable:
         """Decorator that registers a builder function under *key*."""
@@ -36,6 +56,7 @@ class Registry:
 
     def build(self, key: str, config: dict[str, Any]) -> Any:
         """Look up *key* and call the builder with *config*."""
+        self._ensure_discovered()
         if key not in self._registry:
             available = ", ".join(sorted(self._registry)) or "(none)"
             raise KeyError(
@@ -44,9 +65,11 @@ class Registry:
         return self._registry[key](config)
 
     def keys(self) -> list[str]:
+        self._ensure_discovered()
         return list(self._registry.keys())
 
     def __contains__(self, key: str) -> bool:
+        self._ensure_discovered()
         return key in self._registry
 
     def __repr__(self) -> str:
@@ -55,38 +78,9 @@ class Registry:
 
 # ── Global registries ────────────────────────────────────────────────
 
-MODEL_REGISTRY = Registry("model")
+MODEL_REGISTRY = Registry("model", discover_package="waferlab.models")
 OPTIMIZER_REGISTRY = Registry("optimizer")
 SCHEDULER_REGISTRY = Registry("scheduler")
-
-
-# ── Built-in model builders ──────────────────────────────────────────
-
-@MODEL_REGISTRY.register("resnet18")
-def _build_resnet18(config: dict[str, Any]):
-    from .models.resnet import WaferClassifier
-    return WaferClassifier(arch="resnet18", **_classifier_kwargs(config))
-
-
-@MODEL_REGISTRY.register("resnet34")
-def _build_resnet34(config: dict[str, Any]):
-    from .models.resnet import WaferClassifier
-    return WaferClassifier(arch="resnet34", **_classifier_kwargs(config))
-
-
-@MODEL_REGISTRY.register("resnet50")
-def _build_resnet50(config: dict[str, Any]):
-    from .models.resnet import WaferClassifier
-    return WaferClassifier(arch="resnet50", **_classifier_kwargs(config))
-
-
-def _classifier_kwargs(config: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "num_classes": int(config.get("num_classes", 2)),
-        "in_channels": int(config.get("in_channels", 1)),
-        "pretrained": bool(config.get("pretrained", False)),
-        "dropout": float(config.get("dropout", 0.0)),
-    }
 
 
 # ── Built-in optimizer builders ──────────────────────────────────────

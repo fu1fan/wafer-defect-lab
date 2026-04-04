@@ -137,3 +137,32 @@ def build_classifier(config: dict[str, Any]) -> WaferClassifier:
         pretrained=bool(config.get("pretrained", False)),
         dropout=float(config.get("dropout", 0.0)),
     )
+
+
+# ── Registry integration ─────────────────────────────────────────────
+
+from waferlab.registry import MODEL_REGISTRY  # noqa: E402
+
+
+def _classifier_kwargs(config: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "num_classes": int(config.get("num_classes", 2)),
+        "in_channels": int(config.get("in_channels", 1)),
+        "pretrained": bool(config.get("pretrained", False)),
+        "dropout": float(config.get("dropout", 0.0)),
+    }
+
+
+@MODEL_REGISTRY.register("resnet18")
+def _build_resnet18(config: dict[str, Any]) -> WaferClassifier:
+    return WaferClassifier(arch="resnet18", **_classifier_kwargs(config))
+
+
+@MODEL_REGISTRY.register("resnet34")
+def _build_resnet34(config: dict[str, Any]) -> WaferClassifier:
+    return WaferClassifier(arch="resnet34", **_classifier_kwargs(config))
+
+
+@MODEL_REGISTRY.register("resnet50")
+def _build_resnet50(config: dict[str, Any]) -> WaferClassifier:
+    return WaferClassifier(arch="resnet50", **_classifier_kwargs(config))
