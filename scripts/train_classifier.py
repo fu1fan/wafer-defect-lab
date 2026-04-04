@@ -181,6 +181,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--device", type=str, default="auto")
     p.add_argument("--output-dir", type=Path, default=None,
                    help="Where to save checkpoints (default: $WAFERLAB_OUTPUT_ROOT/...)")
+    p.add_argument(
+        "--resume-from",
+        type=Path,
+        default=None,
+        help="Resume training from a saved checkpoint (.pt)",
+    )
     p.add_argument("--smoke-test", action="store_true",
                    help="Run 1 epoch on a tiny subset for quick validation")
     return p.parse_args()
@@ -237,6 +243,29 @@ def main() -> int:
         output_dir=output_dir,
         task_mode=task_mode,
     )
+
+    if args.resume_from is not None:
+        ckpt_path = args.resume_from.resolve()
+        if not ckpt_path.exists():
+            raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
+        trainer.load_checkpoint(ckpt_path)
+        if trainer.start_epoch > trainer.epochs:
+            print(
+                f"Checkpoint already contains {len(trainer.history)} epochs. "
+                f"Configured epochs={trainer.epochs}, nothing left to run."
+            )
+            history = trainer.history
+            history_path = output_dir / "history.json"
+            with history_path.open("w", encoding="utf-8") as f:
+                json.dump(history, f, indent=2)
+            print(f"\nTraining history saved to {history_path}")
+            print(f"Best val accuracy: {trainer.best_val_acc:.4f}")
+            return 0
+
+        print(
+            f"Resuming from {ckpt_path} at epoch "
+            f"{trainer.start_epoch}/{trainer.epochs}"
+        )
 
     history = trainer.fit()
 

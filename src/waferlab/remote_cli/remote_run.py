@@ -194,10 +194,13 @@ def main() -> int:
         save_state(RemoteState(deployment=config, last_run=None))
 
     if not args.no_sync_outputs:
+        remote_output_root = config.output_root
+        if remote_output_root is None:
+            raise SystemExit("Remote output root is not configured.")
         print(f"Syncing remote outputs <= {args.sync_max_size} into {args.local_output_root}")
         sync_output_tree(
             config,
-            config.output_root,
+            remote_output_root,
             Path(args.local_output_root),
             max_size=args.sync_max_size,
         )

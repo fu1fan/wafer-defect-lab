@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -10,18 +12,21 @@ import numpy as np
 import pandas as pd
 import yaml
 
-from .interim_io import ensure_h5py, write_index_artifacts
+from .interim_io import InterimArtifacts, ensure_h5py, write_index_artifacts
 
 
 PROCESSED_SCHEMA_VERSION = "1"
 WM811K_TARGET_SIZE = (224, 224)
+WM811K_PREPROCESS_MODES = {
+    "pad_to_square": "pad_to_square",
+    "aspect_preserving_pad": "aspect_preserving_pad",
+    "stretch_to_target": "stretch_to_target",
+}
 
 
 @dataclass(frozen=True)
-class ProcessedArtifacts:
-    h5_path: Path
-    index_path: Path
-    parquet_path: Path
+class ProcessedArtifacts(InterimArtifacts):
+    pass
 
 
 def load_data_config(config_path: Path) -> dict[str, Any]:
@@ -70,6 +75,16 @@ def build_wm811k_processed_dataset(
     if resize_mode != "nearest":
         raise ValueError(
             "WM-811K processing currently supports only `resize_mode: nearest`."
+        )
+    preprocess_mode = str(
+        config.get("preprocess_mode", WM811K_PREPROCESS_MODES["pad_to_square"])
+    ).lower()
+    if preprocess_mode not in WM811K_PREPROCESS_MODES:
+        raise ValueError(
+            "WM-811K processing currently supports only "
+            "`preprocess_mode: pad_to_square`, "
+            "`preprocess_mode: aspect_preserving_pad`, "
+            "or `preprocess_mode: stretch_to_target`."
         )
 
     storage_config = config.get("storage", {})
@@ -123,6 +138,7 @@ def build_wm811k_processed_dataset(
             interim_h5_path=interim_h5_path,
             subset_root=target_root / "labeled",
             force=force,
+            preprocess_mode=preprocess_mode,
             compression=compression,
             chunks_enabled=chunks_enabled,
             samples_per_chunk=samples_per_chunk,
@@ -134,6 +150,7 @@ def build_wm811k_processed_dataset(
             interim_h5_path=interim_h5_path,
             subset_root=target_root / "unlabeled",
             force=force,
+            preprocess_mode=preprocess_mode,
             compression=compression,
             chunks_enabled=chunks_enabled,
             samples_per_chunk=samples_per_chunk,
@@ -148,6 +165,7 @@ def _build_wm811k_subset(
     interim_h5_path: Path,
     subset_root: Path,
     force: bool,
+    preprocess_mode: str,
     compression: str,
     chunks_enabled: bool,
     samples_per_chunk: int,
@@ -184,6 +202,7 @@ def _build_wm811k_subset(
             subset_name=subset_name,
             source_file=str(interim_h5_path),
             num_samples=num_samples,
+            preprocess_mode=preprocess_mode,
             compression=compression,
             chunks_enabled=chunks_enabled,
             samples_per_chunk=samples_per_chunk,
@@ -204,16 +223,26 @@ def _build_wm811k_subset(
 
         dst_h5.create_dataset("sample_id", data=sample_ids, dtype=np.int64)
 
+        progress = _ProgressReporter(
+            total=num_samples,
+            label=f"WM-811K {subset_name}",
+        )
+        src_maps: Any = src_h5["maps"]
+        src_shapes: Any = src_h5["map_shape"]
         for out_idx, row in enumerate(processed_index.itertuples(index=False)):
+            sid = int(row.sample_id)
             wafer_map = _restore_wafer_map(
-                flattened_map=src_h5["maps"][int(row.sample_id)],
-                map_shape=src_h5["map_shape"][int(row.sample_id)],
+                flattened_map=np.asarray(src_maps[sid]),
+                map_shape=np.asarray(src_shapes[sid]),
             )
-            resized_map = _pad_and_resize_wafer_map(wafer_map, target_size=WM811K_TARGET_SIZE)
+            resized_map = _preprocess_wafer_map(
+                wafer_map,
+                target_size=WM811K_TARGET_SIZE,
+                preprocess_mode=preprocess_mode,
+            )
             maps_ds[out_idx, 0] = resized_map
-
-            if out_idx > 0 and out_idx % 50_000 == 0:
-                print(f"[build] Processed {out_idx}/{num_samples} WM-811K {subset_name} samples...")
+            progress.update(out_idx + 1)
+        progress.finish()
 
     write_index_artifacts(processed_index, artifacts)
     print(f"[done] WM-811K {subset_name} processed HDF5 saved to: {artifacts.h5_path}")
@@ -227,13 +256,57 @@ def _restore_wafer_map(flattened_map: np.ndarray, map_shape: np.ndarray) -> np.n
     return np.asarray(flattened_map, dtype=np.uint8).reshape(shape)
 
 
-def _pad_and_resize_wafer_map(
+def _preprocess_wafer_map(
+    wafer_map: np.ndarray,
+    *,
+    target_size: tuple[int, int],
+    preprocess_mode: str,
+) -> np.ndarray:
+    if preprocess_mode == WM811K_PREPROCESS_MODES["pad_to_square"]:
+        return _pad_to_square_and_resize(wafer_map, target_size=target_size)
+    if preprocess_mode == WM811K_PREPROCESS_MODES["aspect_preserving_pad"]:
+        return _resize_aspect_preserving_and_pad(wafer_map, target_size=target_size)
+    if preprocess_mode == WM811K_PREPROCESS_MODES["stretch_to_target"]:
+        return _stretch_to_target(wafer_map, target_size=target_size)
+    raise ValueError(f"Unsupported preprocess mode: {preprocess_mode}")
+
+
+def _pad_to_square_and_resize(
     wafer_map: np.ndarray,
     *,
     target_size: tuple[int, int],
 ) -> np.ndarray:
     square_map = _pad_to_square(wafer_map, fill_value=0)
     return _resize_nearest(square_map, target_size=target_size)
+
+
+def _resize_aspect_preserving_and_pad(
+    wafer_map: np.ndarray,
+    *,
+    target_size: tuple[int, int],
+) -> np.ndarray:
+    src_h, src_w = wafer_map.shape
+    target_h, target_w = target_size
+    scale = min(target_h / src_h, target_w / src_w)
+    resized_h = max(1, int(round(src_h * scale)))
+    resized_w = max(1, int(round(src_w * scale)))
+    resized_h = min(resized_h, target_h)
+    resized_w = min(resized_w, target_w)
+
+    resized_map = _resize_nearest(wafer_map, target_size=(resized_h, resized_w))
+    padded_map = np.zeros(target_size, dtype=wafer_map.dtype)
+    top = (target_h - resized_h) // 2
+    left = (target_w - resized_w) // 2
+    padded_map[top : top + resized_h, left : left + resized_w] = resized_map
+    return padded_map
+
+
+def _stretch_to_target(
+    wafer_map: np.ndarray,
+    *,
+    target_size: tuple[int, int],
+) -> np.ndarray:
+    return _resize_nearest(wafer_map, target_size=target_size)
 
 
 def _pad_to_square(array: np.ndarray, *, fill_value: int) -> np.ndarray:
@@ -258,6 +331,62 @@ def _resize_nearest(
     row_idx = np.clip(row_idx, 0, src_h - 1)
     col_idx = np.clip(col_idx, 0, src_w - 1)
     return array[row_idx[:, None], col_idx[None, :]]
+
+
+class _ProgressReporter:
+    """Lightweight progress reporter that works in both TTY and log output."""
+
+    def __init__(self, *, total: int, label: str) -> None:
+        self.total = max(int(total), 0)
+        self.label = label
+        self._last_percent = -1
+        self._last_log_count = 0
+        self._last_emit_time = 0.0
+        self._is_tty = sys.stdout.isatty()
+
+        if self.total == 0:
+            print(f"[build] {self.label}: no samples to process.")
+        else:
+            print(f"[build] Processing {self.total} {self.label} samples...")
+
+    def update(self, completed: int) -> None:
+        if self.total <= 0:
+            return
+
+        completed = min(max(int(completed), 0), self.total)
+        percent = int(completed * 100 / self.total)
+        now = time.monotonic()
+
+        if self._is_tty:
+            should_emit = (
+                completed == self.total
+                or percent > self._last_percent
+                or now - self._last_emit_time >= 1.0
+            )
+            if should_emit:
+                print(
+                    f"\r[build] {self.label}: {completed}/{self.total} ({percent:3d}%)",
+                    end="",
+                    flush=True,
+                )
+                self._last_emit_time = now
+                self._last_percent = percent
+            return
+
+        step = max(1, self.total // 20)
+        should_emit = completed == self.total or completed - self._last_log_count >= step
+        if should_emit:
+            print(f"[build] {self.label}: {completed}/{self.total} ({percent}%)")
+            self._last_log_count = completed
+            self._last_percent = percent
+            self._last_emit_time = now
+
+    def finish(self) -> None:
+        if self.total <= 0:
+            return
+        self.update(self.total)
+        if self._is_tty:
+            print()
 
 
 def _get_processed_artifacts(root: Path, dataset_slug: str) -> ProcessedArtifacts:
@@ -300,6 +429,7 @@ def _write_processed_attrs(
     subset_name: str,
     source_file: str,
     num_samples: int,
+    preprocess_mode: str,
     compression: str,
     chunks_enabled: bool,
     samples_per_chunk: int,
@@ -311,10 +441,18 @@ def _write_processed_attrs(
     h5_file.attrs["num_samples"] = int(num_samples)
     h5_file.attrs["target_size"] = str(WM811K_TARGET_SIZE)
     h5_file.attrs["resize_mode"] = "nearest"
+    h5_file.attrs["preprocess_mode"] = preprocess_mode
     h5_file.attrs["storage_keys"] = "maps,sample_id"
     h5_file.attrs["compression"] = compression
     h5_file.attrs["chunks_enabled"] = bool(chunks_enabled)
     h5_file.attrs["samples_per_chunk"] = int(samples_per_chunk)
-    h5_file.attrs["padding_strategy"] = "center pad to square with constant background=0"
+    if preprocess_mode == WM811K_PREPROCESS_MODES["pad_to_square"]:
+        h5_file.attrs["padding_strategy"] = "center pad to square with constant background=0"
+    elif preprocess_mode == WM811K_PREPROCESS_MODES["aspect_preserving_pad"]:
+        h5_file.attrs["padding_strategy"] = (
+            "resize with aspect ratio preserved, then center pad to target size with background=0"
+        )
+    else:
+        h5_file.attrs["padding_strategy"] = "none; resize directly to target size with nearest"
     h5_file.attrs["map_value_semantics"] = "0=background, 1=normal_die, 2=defect_die"
     h5_file.attrs["dynamic_masks"] = "wafer_mask=(map>0), defect_mask=(map==2)"

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from pathlib import Path
 from typing import Any
@@ -72,6 +73,7 @@ class Trainer:
 
         self.best_val_acc: float = 0.0
         self.history: list[dict[str, Any]] = []
+        self.start_epoch: int = 1
 
     # ------------------------------------------------------------------
     # Public API
@@ -79,7 +81,7 @@ class Trainer:
 
     def fit(self) -> list[dict[str, Any]]:
         """Run the full training loop. Returns epoch-level history."""
-        for epoch in range(1, self.epochs + 1):
+        for epoch in range(self.start_epoch, self.epochs + 1):
             t0 = time.time()
             train_loss, train_acc = self._train_one_epoch(epoch)
             val_loss, val_acc = self._validate() if self.val_loader else (0.0, 0.0)
@@ -95,6 +97,7 @@ class Trainer:
                 "elapsed": time.time() - t0,
             }
             self.history.append(record)
+            self._save_history()
             print(
                 f"Epoch {epoch}/{self.epochs}  "
                 f"train_loss={train_loss:.4f}  train_acc={train_acc:.4f}  "
@@ -107,8 +110,31 @@ class Trainer:
                 self.best_val_acc = val_acc
                 self.save_checkpoint("best.pt")
 
-        self.save_checkpoint("last.pt")
+            # Persist each completed epoch so interrupted runs can resume.
+            self.save_checkpoint("last.pt")
+
         return self.history
+
+    def load_checkpoint(self, path: str | Path) -> dict[str, Any]:
+        """Restore model, optimizer, and training history from a checkpoint."""
+        checkpoint = torch.load(Path(path), map_location=self.device)
+        self.model.load_state_dict(checkpoint["model_state_dict"])
+
+        optimizer_state = checkpoint.get("optimizer_state_dict")
+        if optimizer_state is not None:
+            self.optimizer.load_state_dict(optimizer_state)
+
+        self.best_val_acc = float(checkpoint.get("best_val_acc", 0.0))
+        self.history = list(checkpoint.get("history", []))
+
+        last_epoch = int(self.history[-1]["epoch"]) if self.history else 0
+        self.start_epoch = last_epoch + 1
+
+        completed_steps = min(last_epoch, self.epochs)
+        if completed_steps > 0:
+            self.scheduler.last_epoch = completed_steps - 1
+
+        return checkpoint
 
     def save_checkpoint(self, filename: str) -> Path:
         path = self.output_dir / filename
@@ -121,6 +147,12 @@ class Trainer:
             },
             path,
         )
+        return path
+
+    def _save_history(self) -> Path:
+        path = self.output_dir / "history.json"
+        with path.open("w", encoding="utf-8") as f:
+            json.dump(self.history, f, indent=2)
         return path
 
     # ------------------------------------------------------------------

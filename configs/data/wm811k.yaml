@@ -5,6 +5,12 @@ dataset_name: wm811k
 # not continuous image intensities.
 resize_mode: nearest
 
+# Preprocessing strategy before writing the fixed-size processed dataset.
+# `pad_to_square` preserves the old behavior: center-pad to square, then resize.
+# `aspect_preserving_pad` first resizes with aspect ratio preserved, then center-pads to 224x224.
+# `stretch_to_target` directly resizes to 224x224 with nearest-neighbor, without preserving aspect ratio.
+preprocess_mode: pad_to_square
+
 storage:
   # HDF5 compression for the processed wafer maps.
   # `lzf` is a lightweight choice that usually saves space without hurting training I/O too much.
