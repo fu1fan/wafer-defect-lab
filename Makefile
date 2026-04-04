@@ -1,5 +1,4 @@
-PYTHON := python3
-CONDA_RUN := conda run -n torch
+PYTHON ?= python3
 PROJECT := wafer-defect-lab
 OUTPUT_ROOT ?= $(or $(WAFERLAB_OUTPUT_ROOT),outputs)
 
@@ -27,6 +26,7 @@ _REMOTE_RUN_FLAGS = $(_REMOTE_FLAGS) \
 
 help:
 	@echo "Local:"
+	@echo "  Activate your Python environment before running local make targets"
 	@echo "  make install       Install project as editable package"
 	@echo "  make data          Download + build interim datasets"
 	@echo "  make preprocess    Build processed 224×224 datasets"
@@ -46,27 +46,27 @@ help:
 	@echo "  make clean         Remove temporary outputs"
 
 install:
-	pip install -e .
+	$(PYTHON) -m pip install -e .
 
 data:
-	$(CONDA_RUN) $(PYTHON) scripts/prepare_data.py
+	$(PYTHON) scripts/prepare_data.py
 
 preprocess:
-	$(CONDA_RUN) $(PYTHON) scripts/process_data.py
+	$(PYTHON) scripts/process_data.py
 
 train:
-	$(CONDA_RUN) bash scripts/run_train.sh
+	$(PYTHON) -u scripts/train_classifier.py
 
 eval:
-	$(CONDA_RUN) $(PYTHON) scripts/eval_classifier.py \
+	$(PYTHON) scripts/eval_classifier.py \
 		--checkpoint $(OUTPUT_ROOT)/wm811k_resnet_baseline/best.pt
 
 cam:
-	$(CONDA_RUN) $(PYTHON) scripts/visualize_cam.py \
+	$(PYTHON) scripts/visualize_cam.py \
 		--checkpoint $(OUTPUT_ROOT)/wm811k_resnet_baseline/best.pt
 
 smoke-test:
-	$(CONDA_RUN) bash scripts/run_train.sh --smoke-test --output-dir $(OUTPUT_ROOT)/smoke_test
+	$(PYTHON) -u scripts/train_classifier.py --smoke-test --output-dir $(OUTPUT_ROOT)/smoke_test
 
 # ── Remote workflows ─────────────────────────────────────────────────
 

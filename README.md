@@ -93,6 +93,8 @@ pip install -r requirements.txt
 - 本地开发建议直接在你已有的 CUDA/conda 环境里安装合适的 PyTorch
 - 远端机器则交给 `scripts-remote/deploy.py` 自动选择并安装兼容的最新组合
 
+本地 `make` 目标会直接使用当前 shell 里的 `python3` / `pip`，不会自动切换 conda 环境，所以执行 `make train`、`make eval` 等命令前请先激活好对应环境。
+
 本地训练默认采用 `device=auto`：
 - 本机有 CUDA 时优先使用 GPU
 - 没有 CUDA 时自动降级到 CPU
@@ -171,6 +173,7 @@ python scripts/visualize_cam.py --checkpoint outputs/wm811k_resnet_baseline/best
 适合日常写代码、跑 smoke test、快速评估：
 
 ```bash
+conda activate torch
 make train
 make smoke-test
 make eval
