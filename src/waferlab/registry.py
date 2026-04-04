@@ -1,8 +1,13 @@
-"""Lightweight registry for models, optimizers, and schedulers.
+"""Lightweight registry for models, datasets, optimizers, and schedulers.
 
 Usage::
 
-    from waferlab.registry import MODEL_REGISTRY, OPTIMIZER_REGISTRY, SCHEDULER_REGISTRY
+    from waferlab.registry import (
+        MODEL_REGISTRY,
+        DATASET_REGISTRY,
+        OPTIMIZER_REGISTRY,
+        SCHEDULER_REGISTRY,
+    )
 
     # Register a custom model builder (place this in models/xxx.py)
     @MODEL_REGISTRY.register("my_vit")
@@ -79,6 +84,7 @@ class Registry:
 # ── Global registries ────────────────────────────────────────────────
 
 MODEL_REGISTRY = Registry("model", discover_package="waferlab.models")
+DATASET_REGISTRY = Registry("dataset", discover_package="waferlab.data")
 OPTIMIZER_REGISTRY = Registry("optimizer")
 SCHEDULER_REGISTRY = Registry("scheduler")
 

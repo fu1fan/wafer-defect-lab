@@ -25,8 +25,7 @@ from pathlib import Path
 import yaml
 from torch.utils.data import DataLoader, Subset
 
-from waferlab.data.datasets import WM811KProcessedDataset
-from waferlab.data.transforms import WaferAugmentation, InjectFailureTypeIdx, compose
+from waferlab.data.dataloaders import build_classification_dataloaders
 from waferlab.models.resnet import FAILURE_TYPE_TO_IDX
 from waferlab.registry import MODEL_REGISTRY
 from waferlab.runtime import resolve_device, resolve_output_root, resolve_processed_root
@@ -40,71 +39,6 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 def _load_config(path: Path) -> dict:
     with path.open("r", encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
-
-
-def _build_datasets(
-    config: dict,
-    task_mode: str,
-    processed_root: Path,
-    smoke_test: bool = False,
-) -> tuple[DataLoader, DataLoader]:
-    """Build train & val dataloaders from WM-811K labeled processed data."""
-    aug_cfg = config.get("data", {}).get("augment", {})
-    data_cfg = config.get("data", {})
-
-    transforms_train = []
-    if aug_cfg.get("random_flip", True) or aug_cfg.get("random_rotate90", True):
-        transforms_train.append(
-            WaferAugmentation(
-                random_flip=aug_cfg.get("random_flip", True),
-                random_rotate90=aug_cfg.get("random_rotate90", True),
-            )
-        )
-
-    include_meta = task_mode == "multiclass"
-    if task_mode == "multiclass":
-        transforms_train.append(InjectFailureTypeIdx())
-
-    # Train: WM-811K labeled, split_label == "Training"
-    train_ds = WM811KProcessedDataset(
-        processed_root,
-        subset="labeled",
-        transform=compose(transforms_train),
-        include_metadata=include_meta,
-        return_masks=False,
-        return_float=True,
-        filters={"split_label": "Training"},
-    )
-
-    # Val: WM-811K labeled, split_label == "Test"
-    val_transforms = [InjectFailureTypeIdx()] if task_mode == "multiclass" else []
-    val_ds = WM811KProcessedDataset(
-        processed_root,
-        subset="labeled",
-        transform=compose(val_transforms),
-        include_metadata=include_meta,
-        return_masks=False,
-        return_float=True,
-        filters={"split_label": "Test"},
-    )
-
-    if smoke_test:
-        train_ds = Subset(train_ds, list(range(min(256, len(train_ds)))))
-        val_ds = Subset(val_ds, list(range(min(256, len(val_ds)))))
-
-    bs = int(data_cfg.get("batch_size", 64))
-    nw = int(data_cfg.get("num_workers", 4))
-    pin = bool(data_cfg.get("pin_memory", True))
-
-    train_loader = DataLoader(
-        train_ds, batch_size=bs, shuffle=True,
-        num_workers=nw, pin_memory=pin, drop_last=True,
-    )
-    val_loader = DataLoader(
-        val_ds, batch_size=bs, shuffle=False,
-        num_workers=nw, pin_memory=pin, drop_last=False,
-    )
-    return train_loader, val_loader
 
 
 # ── CLI ──────────────────────────────────────────────────────────────
@@ -171,9 +105,10 @@ def main() -> int:
 
     # Build components.
     processed_root = resolve_processed_root(PROJECT_ROOT)
-    train_loader, val_loader = _build_datasets(
-        config, task_mode, processed_root, smoke_test=args.smoke_test,
+    loaders = build_classification_dataloaders(
+        config, processed_root=processed_root, smoke_test=args.smoke_test,
     )
+    train_loader, val_loader = loaders["train"], loaders["val"]
     train_dataset = train_loader.dataset
     val_dataset = val_loader.dataset
     print(f"Train samples: {len(train_dataset if isinstance(train_dataset, Sized) else [])}")

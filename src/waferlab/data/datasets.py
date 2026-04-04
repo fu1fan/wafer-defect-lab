@@ -137,3 +137,25 @@ def _apply_filters(index_df: pd.DataFrame, filters: Mapping[str, Any]) -> pd.Dat
         else:
             filtered_df = filtered_df[filtered_df[column] == expected]
     return filtered_df.reset_index(drop=True)
+
+
+# ── Registry integration ─────────────────────────────────────────────
+
+from ..registry import DATASET_REGISTRY  # noqa: E402
+
+
+@DATASET_REGISTRY.register("wm811k")
+def build_wm811k_dataset(config: dict[str, Any]) -> WM811KProcessedDataset:
+    """Build a :class:`WM811KProcessedDataset` from a config dict."""
+    filters = config.get("filters", {})
+    if filters is None:
+        filters = {}
+    return WM811KProcessedDataset(
+        config["processed_root"],
+        subset=str(config.get("subset", "labeled")),
+        transform=config.get("transform"),
+        include_metadata=bool(config.get("include_metadata", False)),
+        return_masks=bool(config.get("return_masks", True)),
+        return_float=bool(config.get("return_float", True)),
+        filters=filters,
+    )

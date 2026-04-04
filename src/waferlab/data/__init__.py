@@ -1,6 +1,28 @@
-from .dataloaders import build_dataloaders, build_wm811k_dataloader, load_dataloader_config
+"""Data package exports and auto-discovery hooks for data builders."""
+
+import importlib
+import pkgutil
+
+
+def _auto_import_data_modules() -> None:
+    """Import every module under ``waferlab.data`` to trigger registrations."""
+    for _importer, modname, _ispkg in pkgutil.walk_packages(
+        __path__, prefix=__name__ + "."
+    ):
+        importlib.import_module(modname)
+
+
+_auto_import_data_modules()
+
+from .dataloaders import (
+    build_classification_dataloaders,
+    build_dataloaders,
+    build_eval_dataloader,
+    build_wm811k_dataloader,
+    load_dataloader_config,
+)
 from .download import DATASETS, AUTO_ALIASES, resolve_dataset_names, download_dataset
-from .datasets import WM811KProcessedDataset
+from .datasets import WM811KProcessedDataset, build_wm811k_dataset
 from .interim import (
     MIXEDWM38_LABEL_NAMES,
     build_interim_dataset,
@@ -21,8 +43,11 @@ __all__ = [
     "DATASETS",
     "AUTO_ALIASES",
     "WM811KProcessedDataset",
+    "build_classification_dataloaders",
     "build_dataloaders",
+    "build_eval_dataloader",
     "build_wm811k_dataloader",
+    "build_wm811k_dataset",
     "load_dataloader_config",
     "resolve_dataset_names",
     "download_dataset",

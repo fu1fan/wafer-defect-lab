@@ -20,8 +20,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-from waferlab.data.datasets import WM811KProcessedDataset
-from waferlab.data.transforms import InjectFailureTypeIdx, compose
+from waferlab.data.dataloaders import build_eval_dataloader
 from waferlab.models.resnet import FAILURE_TYPE_NAMES, FAILURE_TYPE_TO_IDX
 from waferlab.registry import MODEL_REGISTRY
 from waferlab.runtime import resolve_device, resolve_processed_root
@@ -77,35 +76,12 @@ def main() -> int:
     print(f"Loaded checkpoint: {args.checkpoint}")
     print(f"Task mode: {task_mode}  |  Classes: {model_cfg['num_classes']}")
 
-    # Build eval dataset.
+    # Build eval dataloader.
     processed_root = resolve_processed_root(PROJECT_ROOT)
-    include_meta = task_mode == "multiclass"
-    transforms = [InjectFailureTypeIdx()] if task_mode == "multiclass" else []
-
-    filters: dict = {}
-    if args.split != "all":
-        filters["split_label"] = args.split
-
-    eval_ds = WM811KProcessedDataset(
-        processed_root,
-        subset="labeled",
-        transform=compose(transforms),
-        include_metadata=include_meta,
-        return_masks=False,
-        return_float=True,
-        filters=filters,
+    eval_loader = build_eval_dataloader(
+        config, processed_root=processed_root, split=args.split,
     )
-
-    data_cfg = config.get("data", {})
-    eval_loader = DataLoader(
-        eval_ds,
-        batch_size=int(data_cfg.get("batch_size", 64)),
-        shuffle=False,
-        num_workers=int(data_cfg.get("num_workers", 4)),
-        pin_memory=True,
-        drop_last=False,
-    )
-    print(f"Eval samples: {len(eval_ds)}  (split={args.split})")
+    print(f"Eval samples: {len(eval_loader.dataset)}  (split={args.split})")
 
     # Run evaluation.
     results = evaluate(model, eval_loader, device=device, task_mode=task_mode)
