@@ -52,6 +52,7 @@ def build_classification_dataloaders(
     data_cfg = config.get("data", {})
     aug_cfg = data_cfg.get("augment", {})
     dataset_name = str(data_cfg.get("dataset_name", "wm811k")).strip().lower()
+    dataset_config = data_cfg.get("dataset_config")
 
     include_meta = task_mode == "multiclass"
 
@@ -80,6 +81,7 @@ def build_classification_dataloaders(
         "return_masks": False,
         "return_float": True,
         "filters": {"split_label": "Training"},
+        "dataset_config": dataset_config,
     })
 
     val_ds = DATASET_REGISTRY.build(dataset_name, {
@@ -90,6 +92,7 @@ def build_classification_dataloaders(
         "return_masks": False,
         "return_float": True,
         "filters": {"split_label": "Test"},
+        "dataset_config": dataset_config,
     })
 
     if smoke_test:
@@ -136,6 +139,7 @@ def build_eval_dataloader(
     task_mode = str(config.get("task_mode", "binary"))
     data_cfg = config.get("data", {})
     dataset_name = str(data_cfg.get("dataset_name", "wm811k")).strip().lower()
+    dataset_config = data_cfg.get("dataset_config")
 
     include_meta = task_mode == "multiclass"
     transforms: list = []
@@ -154,6 +158,7 @@ def build_eval_dataloader(
         "return_masks": False,
         "return_float": True,
         "filters": filters,
+        "dataset_config": dataset_config,
     })
 
     return DataLoader(
@@ -176,6 +181,7 @@ def build_dataloaders(
 ) -> dict[str, DataLoader]:
     """Build one or more dataloaders from a config with ``dataset_name`` + ``loaders``."""
     dataset_name = str(config.get("dataset_name", "")).strip().lower()
+    dataset_config = config.get("dataset_config")
 
     loader_configs = config.get("loaders", {})
     if not isinstance(loader_configs, dict) or not loader_configs:
@@ -199,6 +205,7 @@ def build_dataloaders(
             "return_masks": bool(loader_config.get("return_masks", True)),
             "return_float": bool(loader_config.get("return_float", True)),
             "filters": filters,
+            "dataset_config": loader_config.get("dataset_config", dataset_config),
         })
 
         batch_size = int(loader_config.get("batch_size", 64))
@@ -238,6 +245,7 @@ def build_wm811k_dataloader(
         "return_masks": bool(loader_config.get("return_masks", True)),
         "return_float": bool(loader_config.get("return_float", True)),
         "filters": filters,
+        "dataset_config": loader_config.get("dataset_config"),
     })
 
     batch_size = int(loader_config.get("batch_size", 64))

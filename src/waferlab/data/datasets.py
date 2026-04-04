@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping, cast
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
@@ -11,6 +12,7 @@ import torch
 from torch.utils.data import Dataset
 
 from .interim_io import ensure_h5py
+from .processed import validate_wm811k_processed_preprocess_mode
 
 
 class WM811KProcessedDataset(Dataset[dict[str, Any]]):
@@ -26,6 +28,7 @@ class WM811KProcessedDataset(Dataset[dict[str, Any]]):
         return_masks: bool = True,
         return_float: bool = True,
         filters: Mapping[str, Any] | None = None,
+        dataset_config: Mapping[str, Any] | None = None,
     ) -> None:
         self._h5_file: Any | None = None  # init early to avoid __del__ crash
 
@@ -36,9 +39,20 @@ class WM811KProcessedDataset(Dataset[dict[str, Any]]):
         self.return_masks = return_masks
         self.return_float = return_float
         self.filters = dict(filters or {})
+        self.dataset_config = dict(dataset_config or {})
+
+        if dataset_config is not None and not isinstance(dataset_config, Mapping):
+            raise ValueError("`dataset_config` must be a mapping when provided.")
 
         subset_root = self.processed_root / "wm811k" / subset
         self.h5_path = subset_root / f"wm811k_{subset}_224.h5"
+
+        if self.dataset_config:
+            validate_wm811k_processed_preprocess_mode(
+                data_config=self.dataset_config,
+                processed_root=self.processed_root,
+                subset=self.subset,
+            )
 
         # Prefer parquet index; fall back to CSV if unavailable.
         parquet_path = subset_root / f"wm811k_{subset}_224_index.parquet"
@@ -158,4 +172,5 @@ def build_wm811k_dataset(config: dict[str, Any]) -> WM811KProcessedDataset:
         return_masks=bool(config.get("return_masks", True)),
         return_float=bool(config.get("return_float", True)),
         filters=filters,
+        dataset_config=config.get("dataset_config"),
     )

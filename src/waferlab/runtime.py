@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
+from typing import Any
 
 import torch
 
@@ -46,3 +48,12 @@ def resolve_device(requested: str | None = None) -> str:
         print("[warn] CUDA requested but unavailable; falling back to CPU.")
         return "cpu"
     return requested
+
+
+def load_run_summary(path: Path) -> dict[str, Any]:
+    """Load a ``run_summary.json`` produced by the training script."""
+    path = Path(path).resolve()
+    if not path.exists():
+        raise FileNotFoundError(f"Run summary not found: {path}")
+    with path.open("r", encoding="utf-8") as f:
+        return json.load(f)

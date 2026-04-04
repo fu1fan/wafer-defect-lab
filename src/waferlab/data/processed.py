@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -36,6 +37,68 @@ def load_data_config(config_path: Path) -> dict[str, Any]:
     if not isinstance(config, dict):
         raise ValueError(f"Config file must define a mapping: {config_path}")
     return config
+
+
+def resolve_wm811k_preprocess_mode(config: Mapping[str, Any]) -> str:
+    """Resolve and validate the configured WM-811K preprocess mode."""
+    preprocess_mode = str(
+        config.get("preprocess_mode", WM811K_PREPROCESS_MODES["pad_to_square"])
+    ).lower()
+    if preprocess_mode not in WM811K_PREPROCESS_MODES:
+        raise ValueError(
+            "WM-811K processing currently supports only "
+            "`preprocess_mode: pad_to_square`, "
+            "`preprocess_mode: aspect_preserving_pad`, "
+            "or `preprocess_mode: stretch_to_target`."
+        )
+    return preprocess_mode
+
+
+def read_processed_preprocess_mode(h5_path: Path) -> str | None:
+    """Read the stored preprocess mode from a processed WM-811K HDF5 file."""
+    ensure_h5py()
+    h5py = ensure_h5py()
+
+    with h5py.File(h5_path, "r") as h5_file:
+        value = h5_file.attrs.get("preprocess_mode")
+
+    if value is None:
+        return None
+    if isinstance(value, bytes):
+        value = value.decode("utf-8")
+    return str(value).strip().lower()
+
+
+def validate_wm811k_processed_preprocess_mode(
+    *,
+    data_config: Mapping[str, Any],
+    processed_root: str | Path,
+    subset: str = "labeled",
+) -> Path:
+    """Validate that the processed WM-811K HDF5 matches the configured mode."""
+    expected_preprocess_mode = resolve_wm811k_preprocess_mode(data_config)
+    processed_root = Path(processed_root)
+    h5_path = processed_root / "wm811k" / subset / f"wm811k_{subset}_224.h5"
+
+    if not h5_path.exists():
+        raise FileNotFoundError(
+            f"Processed HDF5 not found: {h5_path}. Run `scripts/process_data.py` first."
+        )
+
+    actual_preprocess_mode = read_processed_preprocess_mode(h5_path)
+    if actual_preprocess_mode is None:
+        raise ValueError(
+            "Refusing to continue because the processed HDF5 is missing the "
+            f"`preprocess_mode` attribute: {h5_path}. Re-run `scripts/process_data.py`."
+        )
+    if actual_preprocess_mode != expected_preprocess_mode:
+        raise ValueError(
+            "Refusing to continue because the processed HDF5 was built with "
+            f"`preprocess_mode={actual_preprocess_mode}`, but the data config expects "
+            f"`preprocess_mode={expected_preprocess_mode}`. Re-run `scripts/process_data.py` "
+            "to regenerate the processed dataset."
+        )
+    return h5_path
 
 
 def build_processed_dataset(
@@ -76,16 +139,7 @@ def build_wm811k_processed_dataset(
         raise ValueError(
             "WM-811K processing currently supports only `resize_mode: nearest`."
         )
-    preprocess_mode = str(
-        config.get("preprocess_mode", WM811K_PREPROCESS_MODES["pad_to_square"])
-    ).lower()
-    if preprocess_mode not in WM811K_PREPROCESS_MODES:
-        raise ValueError(
-            "WM-811K processing currently supports only "
-            "`preprocess_mode: pad_to_square`, "
-            "`preprocess_mode: aspect_preserving_pad`, "
-            "or `preprocess_mode: stretch_to_target`."
-        )
+    preprocess_mode = resolve_wm811k_preprocess_mode(config)
 
     storage_config = config.get("storage", {})
     if storage_config is None:
@@ -174,8 +228,30 @@ def _build_wm811k_subset(
     if force:
         _remove_processed_artifacts(artifacts)
     elif _processed_artifacts_exist(artifacts):
-        print(f"[skip] WM-811K {subset_name} processed dataset already exists: {artifacts.h5_path}")
-        return artifacts
+        try:
+            existing_preprocess_mode = read_processed_preprocess_mode(artifacts.h5_path)
+        except Exception as exc:
+            print(
+                "[rebuild] "
+                f"WM-811K {subset_name} processed dataset could not be inspected "
+                f"({artifacts.h5_path}): {exc}. Rebuilding."
+            )
+            _remove_processed_artifacts(artifacts)
+        else:
+            if existing_preprocess_mode == preprocess_mode:
+                print(
+                    f"[skip] WM-811K {subset_name} processed dataset already exists: "
+                    f"{artifacts.h5_path}"
+                )
+                return artifacts
+
+            existing_display = existing_preprocess_mode or "<missing>"
+            print(
+                "[rebuild] "
+                f"WM-811K {subset_name} preprocess_mode changed "
+                f"({existing_display} -> {preprocess_mode}); rebuilding {artifacts.h5_path}"
+            )
+            _remove_processed_artifacts(artifacts)
 
     subset_root.mkdir(parents=True, exist_ok=True)
     ensure_h5py()

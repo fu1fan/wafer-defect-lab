@@ -7,6 +7,11 @@ require a normality-distribution method like PaDiM / PatchCore).
 
 Examples
 --------
+    # Preferred: drive entirely from a run summary produced by training
+    python scripts/visualize_cam.py \
+        --run-summary outputs/wm811k_resnet_baseline/run_summary.json
+
+    # Legacy: manual arguments (still supported)
     python scripts/visualize_cam.py \
         --checkpoint outputs/wm811k_resnet_baseline/best.pt \
         --num-samples 16
@@ -27,7 +32,7 @@ from waferlab.data.datasets import WM811KProcessedDataset
 from waferlab.data.transforms import prepare_input
 from waferlab.models.resnet import FAILURE_TYPE_NAMES, FAILURE_TYPE_TO_IDX
 from waferlab.registry import MODEL_REGISTRY
-from waferlab.runtime import resolve_device, resolve_processed_root
+from waferlab.runtime import load_run_summary, resolve_device, resolve_processed_root
 from waferlab.visualize.cam import GradCAM
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -40,9 +45,14 @@ def _load_config(path: Path) -> dict:
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Generate GradCAM heatmaps")
-    p.add_argument("--checkpoint", type=Path, required=True)
-    p.add_argument("--config", type=Path,
-                   default=PROJECT_ROOT / "configs" / "train" / "wm811k_resnet_baseline.yaml")
+    p.add_argument(
+        "--run-summary", type=Path, default=None,
+        help="Path to run_summary.json produced by train_classifier.py. "
+             "When provided, checkpoint / config / task-mode / output-dir "
+             "are read from it automatically (CLI flags still override).",
+    )
+    p.add_argument("--checkpoint", type=Path, default=None)
+    p.add_argument("--config", type=Path, default=None)
     p.add_argument("--task-mode", choices=["binary", "multiclass"], default=None)
     p.add_argument("--num-samples", type=int, default=16)
     p.add_argument("--device", type=str, default="auto")
@@ -131,29 +141,68 @@ def _save_heatmaps_matplotlib(
 
 def main() -> int:
     args = parse_args()
-    config = _load_config(args.config)
-    task_mode = args.task_mode or config.get("task_mode", "binary")
 
-    model_cfg = config.get("model", {})
+    # ── Resolve parameters: run_summary provides defaults, CLI overrides ──
+    summary: dict = {}
+    if args.run_summary is not None:
+        summary = load_run_summary(args.run_summary)
+
+    # Checkpoint
+    checkpoint = args.checkpoint
+    if checkpoint is None:
+        ckpt_best = summary.get("checkpoints", {}).get("best")
+        if ckpt_best is not None:
+            checkpoint = Path(ckpt_best)
+    if checkpoint is None:
+        raise SystemExit(
+            "Error: --checkpoint is required (or provide --run-summary)."
+        )
+
+    # Task mode
+    task_mode = args.task_mode
+    if task_mode is None:
+        task_mode = summary.get("task_mode")
+
+    # Model config — prefer the snapshot stored in run_summary so that
+    # arch / num_classes / in_channels are always consistent with the
+    # checkpoint.
+    model_cfg: dict
+    if "model" in summary:
+        model_cfg = dict(summary["model"])
+    else:
+        config_path = args.config or PROJECT_ROOT / "configs" / "train" / "wm811k.yaml"
+        config = _load_config(config_path)
+        model_cfg = config.get("model", {})
+        task_mode = task_mode or config.get("task_mode", "binary")
+
+    task_mode = task_mode or "binary"
+
     if task_mode == "binary":
-        model_cfg["num_classes"] = 2
+        model_cfg.setdefault("num_classes", 2)
         class_names = ["normal", "abnormal"]
     else:
-        model_cfg["num_classes"] = len(FAILURE_TYPE_TO_IDX)
+        model_cfg.setdefault("num_classes", len(FAILURE_TYPE_TO_IDX))
         class_names = list(FAILURE_TYPE_NAMES)
 
-    output_dir = args.output_dir or (args.checkpoint.parent / "cam")
+    # Output directory: CLI > run_summary output_dir/cam > checkpoint sibling
+    output_dir: Path
+    if args.output_dir is not None:
+        output_dir = args.output_dir
+    elif "output_dir" in summary:
+        output_dir = Path(summary["output_dir"]) / "cam"
+    else:
+        output_dir = checkpoint.parent / "cam"
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Load model.
     device = resolve_device(args.device)
     model = MODEL_REGISTRY.build(model_cfg.get("arch", "resnet18"), model_cfg)
-    ckpt = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
+    ckpt = torch.load(checkpoint, map_location="cpu", weights_only=True)
     model.load_state_dict(ckpt["model_state_dict"])
     model = model.to(device)
     model.eval()
-    print(f"Loaded checkpoint: {args.checkpoint}")
+    print(f"Loaded checkpoint: {checkpoint}")
 
     # Build dataset.
     processed_root = resolve_processed_root(PROJECT_ROOT)

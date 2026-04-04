@@ -26,6 +26,7 @@ import yaml
 from torch.utils.data import DataLoader, Subset
 
 from waferlab.data.dataloaders import build_classification_dataloaders
+from waferlab.data.processed import load_data_config
 from waferlab.models.resnet import FAILURE_TYPE_TO_IDX
 from waferlab.registry import MODEL_REGISTRY
 from waferlab.runtime import resolve_device, resolve_output_root, resolve_processed_root
@@ -49,6 +50,12 @@ def parse_args() -> argparse.Namespace:
         "--config", type=Path,
         default=PROJECT_ROOT / "configs" / "train" / "wm811k.yaml",
     )
+    p.add_argument(
+        "--data-config",
+        type=Path,
+        default=PROJECT_ROOT / "configs" / "data" / "wm811k.yaml",
+        help="Path to the dataset processing config YAML used to build processed data.",
+    )
     p.add_argument("--task-mode", choices=["binary", "multiclass"], default=None,
                    help="Override task_mode in config")
     p.add_argument("--epochs", type=int, default=None, help="Override epoch count")
@@ -70,6 +77,14 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     config = _load_config(args.config)
+    data_config = load_data_config(args.data_config)
+    data_section = config.get("data")
+    if data_section is None:
+        data_section = {}
+        config["data"] = data_section
+    elif not isinstance(data_section, dict):
+        raise ValueError("`data` in the training config must be a mapping.")
+    data_section["dataset_config"] = data_config
     task_mode = args.task_mode or config.get("task_mode", "binary")
     device = resolve_device(args.device)
 
@@ -138,6 +153,27 @@ def main() -> int:
                 json.dump(history, f, indent=2)
             print(f"\nTraining history saved to {history_path}")
             print(f"Best val accuracy: {trainer.best_val_acc:.4f}")
+
+            # Still write run summary for the already-completed run.
+            run_summary = {
+                "task_mode": task_mode,
+                "model": model_cfg,
+                "train_config": str(args.config.resolve()),
+                "data_config": str(args.data_config.resolve()),
+                "output_dir": str(output_dir.resolve()),
+                "checkpoints": {
+                    "best": str((output_dir / "best.pt").resolve()),
+                    "last": str((output_dir / "last.pt").resolve()),
+                },
+                "best_val_acc": trainer.best_val_acc,
+                "epochs_completed": len(trainer.history),
+                "created_at": datetime.now().isoformat(),
+            }
+            summary_path = output_dir / "run_summary.json"
+            with summary_path.open("w", encoding="utf-8") as f:
+                json.dump(run_summary, f, indent=2)
+            print(f"Run summary saved to {summary_path}")
+
             return 0
 
         print(
@@ -153,6 +189,28 @@ def main() -> int:
         json.dump(history, f, indent=2)
     print(f"\nTraining history saved to {history_path}")
     print(f"Best val accuracy: {trainer.best_val_acc:.4f}")
+
+    # Write run summary so downstream scripts (e.g. visualize_cam) can be
+    # driven by a single JSON file instead of many CLI flags.
+    run_summary = {
+        "task_mode": task_mode,
+        "model": model_cfg,
+        "train_config": str(args.config.resolve()),
+        "data_config": str(args.data_config.resolve()),
+        "output_dir": str(output_dir.resolve()),
+        "checkpoints": {
+            "best": str((output_dir / "best.pt").resolve()),
+            "last": str((output_dir / "last.pt").resolve()),
+        },
+        "best_val_acc": trainer.best_val_acc,
+        "epochs_completed": len(trainer.history),
+        "created_at": datetime.now().isoformat(),
+    }
+    summary_path = output_dir / "run_summary.json"
+    with summary_path.open("w", encoding="utf-8") as f:
+        json.dump(run_summary, f, indent=2)
+    print(f"Run summary saved to {summary_path}")
+
     return 0
 
 
