@@ -28,7 +28,7 @@ from .common import (
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_TRAIN_CONFIG = "configs/modal/experiments/wm811k_resnet18_baseline.yaml"
+DEFAULT_TRAIN_CONFIG = "configs/modal/baseline/experiments/wm811k_resnet18_baseline.yaml"
 BLUE = "\033[34m"
 GREEN = "\033[32m"
 RESET = "\033[0m"

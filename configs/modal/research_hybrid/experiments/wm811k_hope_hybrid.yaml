@@ -4,13 +4,13 @@
 #
 #   Stage 1 – multiclass warmup (9-class, optional but recommended):
 #     python scripts/train_classifier.py \
-#       --config configs/modal/experiments/wm811k_hope_hybrid.yaml \
+#       --config configs/modal/research_hybrid/experiments/wm811k_hope_hybrid.yaml \
 #       --task-mode multiclass --epochs 15 \
 #       --output-dir outputs/hope_hybrid_multiclass_warmup
 #
 #   Stage 2 – binary fine-tuning (2-class):
 #     python scripts/train_classifier.py \
-#       --config configs/modal/experiments/wm811k_hope_hybrid.yaml \
+#       --config configs/modal/research_hybrid/experiments/wm811k_hope_hybrid.yaml \
 #       --finetune-from outputs/hope_hybrid_multiclass_warmup/best.pt \
 #       --lr 1e-4
 #
@@ -21,6 +21,6 @@
 # ─────────────────────────────────────────────────────────────────────
 
 _base_:
-  - ../base/wm811k_classifier.yaml
+  - ../../base/wm811k_classifier.yaml
   - ../models/hope_hybrid.yaml
   - ../recipes/hope_hybrid_default.yaml

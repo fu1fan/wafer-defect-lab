@@ -95,7 +95,10 @@ def main() -> int:
             else:
                 config = {}
     else:
-        config_path = args.config or PROJECT_ROOT / "configs" / "modal" / "experiments" / "wm811k_resnet18_baseline.yaml"
+        config_path = (
+            args.config
+            or PROJECT_ROOT / "configs" / "modal" / "baseline" / "experiments" / "wm811k_resnet18_baseline.yaml"
+        )
         config = load_yaml_config(config_path)
         model_cfg = config.get("model", {})
         task_mode = task_mode or config.get("task_mode", "binary")

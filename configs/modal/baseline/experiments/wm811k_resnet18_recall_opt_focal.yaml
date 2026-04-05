@@ -1,4 +1,4 @@
 _base_:
-  - ../base/wm811k_classifier.yaml
+  - ../../base/wm811k_classifier.yaml
   - ../models/resnet18_recall_opt.yaml
   - ../recipes/focal_recall.yaml

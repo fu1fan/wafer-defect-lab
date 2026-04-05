@@ -1,4 +1,4 @@
 _base_:
-  - ../base/wm811k_classifier.yaml
+  - ../../base/wm811k_classifier.yaml
   - ../models/hope_hybrid.yaml
   - ../recipes/focal_recall.yaml

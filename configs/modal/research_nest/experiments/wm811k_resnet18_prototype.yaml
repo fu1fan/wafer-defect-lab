@@ -3,9 +3,9 @@
 # Surprise-gated class prototypes with auxiliary alignment loss.
 # Quick validation:
 #   python scripts/train_classifier.py \
-#       --config configs/modal/experiments/wm811k_resnet18_prototype.yaml \
+#       --config configs/modal/research_nest/experiments/wm811k_resnet18_prototype.yaml \
 #       --smoke-test
 _base_:
-  - ../base/wm811k_classifier.yaml
+  - ../../base/wm811k_classifier.yaml
   - ../models/resnet18.yaml
   - ../recipes/prototype_ce.yaml

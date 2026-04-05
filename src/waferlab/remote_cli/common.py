@@ -418,7 +418,7 @@ def resolve_run_state(
     config_path = (
         state.last_run.config_path
         if state.last_run
-        else "configs/modal/experiments/wm811k_resnet18_baseline.yaml"
+        else "configs/modal/baseline/experiments/wm811k_resnet18_baseline.yaml"
     )
     return RunState(
         run_id=run_id,

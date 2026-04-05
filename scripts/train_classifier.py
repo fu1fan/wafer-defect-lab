@@ -8,7 +8,7 @@ Examples
 
     # Multi-class failure-type classification
     python scripts/train_classifier.py \
-        --config configs/modal/experiments/wm811k_resnet18_baseline.yaml \
+        --config configs/modal/baseline/experiments/wm811k_resnet18_baseline.yaml \
         --task-mode multiclass
 
     # Quick smoke test (1 epoch, small subset)
@@ -41,7 +41,7 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Train wafer-level classifier")
     p.add_argument(
         "--config", type=Path,
-        default=PROJECT_ROOT / "configs" / "modal" / "experiments" / "wm811k_resnet18_baseline.yaml",
+        default=PROJECT_ROOT / "configs" / "modal" / "baseline" / "experiments" / "wm811k_resnet18_baseline.yaml",
     )
     p.add_argument(
         "--data-config",
