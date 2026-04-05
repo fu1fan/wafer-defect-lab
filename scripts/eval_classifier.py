@@ -20,10 +20,9 @@ import argparse
 import json
 from pathlib import Path
 
-import yaml
-
 import torch
 
+from waferlab.config import load_yaml_config
 from waferlab.data.dataloaders import build_eval_dataloader
 from waferlab.models.resnet import FAILURE_TYPE_NAMES, FAILURE_TYPE_TO_IDX
 from waferlab.registry import MODEL_REGISTRY
@@ -32,13 +31,6 @@ from waferlab.engine.evaluator import evaluate
 from waferlab.metrics.classification import compute_metrics, format_metrics
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-
-
-def _load_config(path: Path) -> dict:
-    with path.open("r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
-
-
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Evaluate wafer-level classifier")
     p.add_argument(
@@ -99,12 +91,12 @@ def main() -> int:
             # Old format: fall back to reading the yaml from the path.
             config_path = Path(train_config_entry) if train_config_entry else None
             if config_path and config_path.exists():
-                config = _load_config(config_path)
+                config = load_yaml_config(config_path)
             else:
                 config = {}
     else:
-        config_path = args.config or PROJECT_ROOT / "configs" / "train" / "wm811k.yaml"
-        config = _load_config(config_path)
+        config_path = args.config or PROJECT_ROOT / "configs" / "modal" / "experiments" / "wm811k_resnet18_baseline.yaml"
+        config = load_yaml_config(config_path)
         model_cfg = config.get("model", {})
         task_mode = task_mode or config.get("task_mode", "binary")
 

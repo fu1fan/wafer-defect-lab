@@ -7,7 +7,8 @@ Examples
     python scripts/train_classifier.py
 
     # Multi-class failure-type classification
-    python scripts/train_classifier.py --config configs/train/wm811k_resnet_baseline.yaml \
+    python scripts/train_classifier.py \
+        --config configs/modal/experiments/wm811k_resnet18_baseline.yaml \
         --task-mode multiclass
 
     # Quick smoke test (1 epoch, small subset)
@@ -22,9 +23,9 @@ from collections.abc import Sized
 from datetime import datetime
 from pathlib import Path
 
-import yaml
 from torch.utils.data import DataLoader, Subset
 
+from waferlab.config import load_yaml_config
 from waferlab.data.dataloaders import build_classification_dataloaders
 from waferlab.data.processed import load_data_config
 from waferlab.models.resnet import FAILURE_TYPE_TO_IDX
@@ -34,21 +35,13 @@ from waferlab.engine.trainer import Trainer
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
-
-# ── Helpers ──────────────────────────────────────────────────────────
-
-def _load_config(path: Path) -> dict:
-    with path.open("r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
-
-
 # ── CLI ──────────────────────────────────────────────────────────────
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Train wafer-level classifier")
     p.add_argument(
         "--config", type=Path,
-        default=PROJECT_ROOT / "configs" / "train" / "wm811k.yaml",
+        default=PROJECT_ROOT / "configs" / "modal" / "experiments" / "wm811k_resnet18_baseline.yaml",
     )
     p.add_argument(
         "--data-config",
@@ -76,7 +69,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    config = _load_config(args.config)
+    config = load_yaml_config(args.config)
     data_config = load_data_config(args.data_config)
     data_section = config.get("data")
     if data_section is None:

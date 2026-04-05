@@ -37,7 +37,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--local-report-root", default=None, help="Local directory for downloaded reports")
     parser.add_argument(
         "--config",
-        default="configs/train/wm811k_resnet_baseline.yaml",
+        default="configs/modal/experiments/wm811k_resnet18_baseline.yaml",
         help="Training config path relative to the project root",
     )
     parser.add_argument("--run-id", default=None, help="Optional explicit run id")

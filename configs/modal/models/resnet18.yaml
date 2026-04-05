@@ -1,0 +1,5 @@
+model:
+  arch: resnet18
+  in_channels: 1
+  pretrained: false
+  dropout: 0.2

@@ -79,13 +79,23 @@ class Trainer:
         }
         self.scheduler = SCHEDULER_REGISTRY.build(scheduler_name, sched_cfg)
 
-        # Optional class weights for imbalanced data.
+        # Loss function: CE (default) or Focal Loss.
+        loss_type = str(config.get("loss_type", "ce")).lower()
         class_weights = config.get("class_weights")
-        if class_weights is not None:
-            w = torch.tensor(class_weights, dtype=torch.float32, device=self.device)
-            self.criterion = nn.CrossEntropyLoss(weight=w)
+
+        if loss_type == "focal":
+            from .losses import FocalLoss
+            focal_gamma = float(config.get("focal_gamma", 2.0))
+            focal_alpha = class_weights  # reuse class_weights as alpha
+            self.criterion = FocalLoss(
+                gamma=focal_gamma, alpha=focal_alpha, reduction="mean",
+            )
         else:
-            self.criterion = nn.CrossEntropyLoss()
+            if class_weights is not None:
+                w = torch.tensor(class_weights, dtype=torch.float32, device=self.device)
+                self.criterion = nn.CrossEntropyLoss(weight=w)
+            else:
+                self.criterion = nn.CrossEntropyLoss()
 
         self.best_val_acc: float = 0.0
         self.history: list[dict[str, Any]] = []

@@ -1,0 +1,8 @@
+model:
+  arch: resnet18_recall_opt
+  in_channels: 1
+  pretrained: false
+  dropout: 0.3
+  gem_p: 3.0
+  se_reduction: 4
+  head_hidden: 256

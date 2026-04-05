@@ -11,8 +11,8 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-import yaml
 
+from ..config import load_yaml_config
 from .interim_io import InterimArtifacts, ensure_h5py, write_index_artifacts
 
 
@@ -32,11 +32,7 @@ class ProcessedArtifacts(InterimArtifacts):
 
 def load_data_config(config_path: Path) -> dict[str, Any]:
     """Load a YAML data config file."""
-    with config_path.open("r", encoding="utf-8") as config_file:
-        config = yaml.safe_load(config_file) or {}
-    if not isinstance(config, dict):
-        raise ValueError(f"Config file must define a mapping: {config_path}")
-    return config
+    return load_yaml_config(config_path)
 
 
 def resolve_wm811k_preprocess_mode(config: Mapping[str, Any]) -> str:

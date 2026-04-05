@@ -1,0 +1,11 @@
+model:
+  arch: hope_hybrid
+  in_channels: 1
+  dropout: 0.2
+  dims: [48, 96, 192, 384]
+  depths: [2, 2, 4, 2]
+  hope_kernel_size: 7
+  hope_expand_ratio: 4.0
+  se_reduction: 4
+  layer_scale_init: 1.0e-6
+  drop_path_rate: 0.1

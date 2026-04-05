@@ -1,0 +1,6 @@
+train:
+  epochs: 30
+  lr: 3.0e-4
+  weight_decay: 5.0e-2
+  grad_clip: 1.0
+  loss_type: ce

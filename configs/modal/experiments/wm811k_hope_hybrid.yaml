@@ -1,0 +1,4 @@
+_base_:
+  - ../base/wm811k_classifier.yaml
+  - ../models/hope_hybrid.yaml
+  - ../recipes/hope_hybrid_default.yaml

@@ -415,7 +415,11 @@ def resolve_run_state(
         return state.last_run
     remote_run_dir = f"{state.deployment.runs_root}/{run_id}"
     local_report_dir = str(Path(state.deployment.local_report_root) / run_id)
-    config_path = state.last_run.config_path if state.last_run else "configs/train/wm811k_resnet_baseline.yaml"
+    config_path = (
+        state.last_run.config_path
+        if state.last_run
+        else "configs/modal/experiments/wm811k_resnet18_baseline.yaml"
+    )
     return RunState(
         run_id=run_id,
         remote_run_dir=remote_run_dir,

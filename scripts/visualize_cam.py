@@ -22,12 +22,11 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-import yaml
-
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, Subset
 
+from waferlab.config import load_yaml_config
 from waferlab.data.datasets import WM811KProcessedDataset
 from waferlab.data.transforms import prepare_input
 from waferlab.models.resnet import FAILURE_TYPE_NAMES, FAILURE_TYPE_TO_IDX
@@ -36,13 +35,6 @@ from waferlab.runtime import load_run_summary, resolve_device, resolve_processed
 from waferlab.visualize.cam import GradCAM
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-
-
-def _load_config(path: Path) -> dict:
-    with path.open("r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
-
-
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Generate GradCAM heatmaps")
     p.add_argument(
@@ -170,8 +162,8 @@ def main() -> int:
     if "model" in summary:
         model_cfg = dict(summary["model"])
     else:
-        config_path = args.config or PROJECT_ROOT / "configs" / "train" / "wm811k.yaml"
-        config = _load_config(config_path)
+        config_path = args.config or PROJECT_ROOT / "configs" / "modal" / "experiments" / "wm811k_resnet18_baseline.yaml"
+        config = load_yaml_config(config_path)
         model_cfg = config.get("model", {})
         task_mode = task_mode or config.get("task_mode", "binary")
 

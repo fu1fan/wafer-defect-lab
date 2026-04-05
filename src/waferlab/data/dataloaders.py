@@ -5,21 +5,16 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-import yaml
 from torch.utils.data import DataLoader, Subset
 
+from ..config import load_yaml_config
 from ..registry import DATASET_REGISTRY
 from .transforms import WaferAugmentation, InjectFailureTypeIdx, compose
 
 
 def load_dataloader_config(config_path: str | Path) -> dict[str, Any]:
     """Load a YAML dataloader config file."""
-    path = Path(config_path)
-    with path.open("r", encoding="utf-8") as config_file:
-        config = yaml.safe_load(config_file) or {}
-    if not isinstance(config, dict):
-        raise ValueError(f"Dataloader config must define a mapping: {path}")
-    return config
+    return load_yaml_config(config_path)
 
 
 # ── Classification builders (train / eval) ───────────────────────────

@@ -1,0 +1,4 @@
+_base_:
+  - ../base/wm811k_classifier.yaml
+  - ../models/resnet18.yaml
+  - ../recipes/ce_default.yaml
