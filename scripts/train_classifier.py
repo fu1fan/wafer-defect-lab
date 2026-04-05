@@ -60,7 +60,17 @@ def parse_args() -> argparse.Namespace:
         "--resume-from",
         type=Path,
         default=None,
-        help="Resume training from a saved checkpoint (.pt)",
+        help="Resume training from a saved checkpoint (.pt). "
+             "Requires identical model architecture and num_classes.",
+    )
+    p.add_argument(
+        "--finetune-from",
+        type=Path,
+        default=None,
+        help="Load backbone weights from a checkpoint, skipping the head when "
+             "num_classes differs.  Use for cross-task transfer, e.g. "
+             "multiclass pre-training -> binary fine-tuning. "
+             "Does not restore training history or optimizer state.",
     )
     p.add_argument("--smoke-test", action="store_true",
                    help="Run 1 epoch on a tiny subset for quick validation")
@@ -122,6 +132,13 @@ def main() -> int:
     print(f"Train samples: {len(train_dataset if isinstance(train_dataset, Sized) else [])}")
     print(f"Val samples  : {len(val_dataset if isinstance(val_dataset, Sized) else [])}")
 
+    if args.resume_from is not None and args.finetune_from is not None:
+        raise ValueError(
+            "--resume-from and --finetune-from are mutually exclusive. "
+            "Use --resume-from to continue the same task, or --finetune-from "
+            "to transfer backbone weights across tasks (e.g. multiclass -> binary)."
+        )
+
     model = MODEL_REGISTRY.build(model_cfg.get("arch", "resnet18"), model_cfg)
     trainer = Trainer(
         model, train_loader, val_loader, train_cfg,
@@ -129,6 +146,14 @@ def main() -> int:
         output_dir=output_dir,
         task_mode=task_mode,
     )
+
+    if args.finetune_from is not None:
+        ckpt_path = args.finetune_from.resolve()
+        if not ckpt_path.exists():
+            raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
+        trainer.load_backbone(ckpt_path)
+        print(f"Fine-tuning backbone from: {ckpt_path}")
+        print()
 
     if args.resume_from is not None:
         ckpt_path = args.resume_from.resolve()

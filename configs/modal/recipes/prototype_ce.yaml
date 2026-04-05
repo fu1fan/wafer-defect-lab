@@ -1,0 +1,15 @@
+# Prototype-enhanced CE recipe (Nested-Learning-inspired).
+#
+# Adds surprise-gated class prototypes and an auxiliary alignment loss
+# on top of standard cross-entropy.  Prototypes update only during
+# training; validation/test are unaffected.
+train:
+  loss_type: ce
+  weight_decay: 1.0e-3
+  grad_clip: 1.0
+  prototype:
+    enabled: true
+    momentum: 0.99
+    surprise_threshold: 0.5
+    aux_weight: 0.1
+    warmup_epochs: 3

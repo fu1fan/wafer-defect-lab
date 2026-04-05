@@ -34,3 +34,31 @@ python scripts/train_classifier.py \
 - `experiments/` 尽量只做组合，必要时再覆盖少量字段
 
 异常检测 dataloader 配置已经移到 `configs/anomaly/`，不再和分类训练配置混放。
+
+## Prototype Memory（Nested-Learning 启发）
+
+`recipes/prototype_ce.yaml` 启用基于 surprise-gated class prototype 的训练增强。
+核心思想来自 Google Nested Learning 论文中的 CMS 多频记忆更新和 surprise 门控机制，
+翻译为图像分类场景下的 per-class 特征原型 + 辅助对齐损失。
+
+- **Prototype EMA**：训练期维护每类特征质心，以 EMA 缓慢更新
+- **Surprise 门控**：仅在 per-sample loss 超过阈值时更新原型（跳过"太容易"的样本）
+- **辅助损失**：将特征拉向所属类别原型，提供额外监督信号
+- **仅训练阶段生效**：验证和测试不会使用或更新原型
+
+```yaml
+train:
+  prototype:
+    enabled: true
+    momentum: 0.99            # EMA 动量（越高漂移越慢）
+    surprise_threshold: 0.5   # per-sample loss 门控阈值
+    aux_weight: 0.1           # 辅助损失权重
+    warmup_epochs: 3          # 预热 epoch 数（先稳定原型再施加辅助损失）
+```
+
+使用方式：
+
+```bash
+python scripts/train_classifier.py \
+  --config configs/modal/experiments/wm811k_resnet18_prototype.yaml --smoke-test
+```

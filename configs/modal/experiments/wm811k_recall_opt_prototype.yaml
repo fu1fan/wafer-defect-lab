@@ -1,0 +1,17 @@
+# RecallOpt + prototype memory (Nested-Learning-inspired)
+#
+# Combines GeM/SE recall-optimized head with surprise-gated
+# class prototypes and auxiliary alignment loss.  Uses focal loss
+# for the main objective.
+_base_:
+  - ../base/wm811k_classifier.yaml
+  - ../models/resnet18_recall_opt.yaml
+  - ../recipes/focal_recall.yaml
+
+train:
+  prototype:
+    enabled: true
+    momentum: 0.99
+    surprise_threshold: 0.5
+    aux_weight: 0.1
+    warmup_epochs: 3

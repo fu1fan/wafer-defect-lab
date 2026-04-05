@@ -9,11 +9,13 @@ from typing import Any
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 from ..data.transforms import prepare_input, DEFAULT_NORM_SCALE
 from ..models.resnet import WaferClassifier
 from ..registry import OPTIMIZER_REGISTRY, SCHEDULER_REGISTRY
+from .prototype_memory import PrototypeMemory
 
 
 class Trainer:
@@ -101,6 +103,28 @@ class Trainer:
         self.history: list[dict[str, Any]] = []
         self.start_epoch: int = 1
 
+        # Optional prototype memory (Nested-Learning-inspired).
+        proto_cfg = config.get("prototype")
+        if proto_cfg and proto_cfg.get("enabled", False):
+            feat_dim = self._infer_feat_dim()
+            self.prototype: PrototypeMemory | None = PrototypeMemory(
+                feat_dim=feat_dim,
+                num_classes=model.num_classes,
+                momentum=float(proto_cfg.get("momentum", 0.99)),
+                surprise_threshold=float(proto_cfg.get("surprise_threshold", 0.0)),
+                aux_weight=float(proto_cfg.get("aux_weight", 0.1)),
+                warmup_epochs=int(proto_cfg.get("warmup_epochs", 3)),
+            )
+            print(
+                f"[prototype] enabled  feat_dim={feat_dim}  "
+                f"momentum={self.prototype.momentum}  "
+                f"surprise={self.prototype.surprise_threshold}  "
+                f"aux_weight={self.prototype.aux_weight}  "
+                f"warmup={self.prototype.warmup_epochs} epochs"
+            )
+        else:
+            self.prototype = None
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -142,8 +166,49 @@ class Trainer:
 
         return self.history
 
+    def load_backbone(self, path: str | Path) -> None:
+        """Load backbone weights from a checkpoint, skipping parameters whose shapes
+        differ between checkpoint and current model (e.g. the classification head).
+
+        Intended for cross-task transfer such as multiclass pre-training followed by
+        binary fine-tuning.  Unlike :meth:`load_checkpoint`, this method does **not**
+        restore the optimizer state, training history, or ``best_val_acc`` -- the
+        caller starts a fresh training run with transferred backbone weights.
+        """
+        checkpoint = torch.load(Path(path), map_location=self.device)
+        src_state = checkpoint["model_state_dict"]
+        dst_state = self.model.state_dict()
+
+        compatible: dict[str, torch.Tensor] = {}
+        skipped: list[str] = []
+        for key, val in src_state.items():
+            if key not in dst_state:
+                skipped.append(f"  {key}: not present in current model")
+            elif val.shape != dst_state[key].shape:
+                skipped.append(
+                    f"  {key}: checkpoint shape {tuple(val.shape)} "
+                    f"!= model shape {tuple(dst_state[key].shape)}"
+                )
+            else:
+                compatible[key] = val
+
+        self.model.load_state_dict(compatible, strict=False)
+
+        if skipped:
+            print(f"[load_backbone] skipped {len(skipped)} key(s) due to shape mismatch:")
+            for msg in skipped:
+                print(msg)
+        print(
+            f"[load_backbone] loaded {len(compatible)}/{len(src_state)} "
+            f"parameter tensors from {path}"
+        )
+
     def load_checkpoint(self, path: str | Path) -> dict[str, Any]:
-        """Restore model, optimizer, and training history from a checkpoint."""
+        """Restore model, optimizer, and training history from a checkpoint.
+
+        Requires an exact parameter-shape match.  Use :meth:`load_backbone` when
+        transferring weights across tasks with different ``num_classes``.
+        """
         checkpoint = torch.load(Path(path), map_location=self.device)
         self.model.load_state_dict(checkpoint["model_state_dict"])
 
@@ -161,19 +226,23 @@ class Trainer:
         if completed_steps > 0 and self.scheduler is not None:
             self.scheduler.last_epoch = completed_steps - 1
 
+        proto_state = checkpoint.get("prototype_state")
+        if proto_state is not None and self.prototype is not None:
+            self.prototype.load_state_dict(proto_state)
+
         return checkpoint
 
     def save_checkpoint(self, filename: str) -> Path:
         path = self.output_dir / filename
-        torch.save(
-            {
-                "model_state_dict": self.model.state_dict(),
-                "optimizer_state_dict": self.optimizer.state_dict(),
-                "best_val_acc": self.best_val_acc,
-                "history": self.history,
-            },
-            path,
-        )
+        payload = {
+            "model_state_dict": self.model.state_dict(),
+            "optimizer_state_dict": self.optimizer.state_dict(),
+            "best_val_acc": self.best_val_acc,
+            "history": self.history,
+        }
+        if self.prototype is not None:
+            payload["prototype_state"] = self.prototype.state_dict()
+        torch.save(payload, path)
         return path
 
     def _save_history(self) -> Path:
@@ -185,6 +254,21 @@ class Trainer:
     # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------
+
+    def _infer_feat_dim(self) -> int:
+        """Derive the feature dimension from the model's classification head."""
+        if hasattr(self.model, "head") and isinstance(self.model.head, nn.Sequential):
+            return self.model.head[0].in_features  # first Linear layer
+        if hasattr(self.model, "fc") and isinstance(self.model.fc, nn.Linear):
+            return self.model.fc.in_features
+        raise RuntimeError("Cannot infer feat_dim: model has no .fc or .head")
+
+    def _classify_features(self, feat: torch.Tensor) -> torch.Tensor:
+        """Compute logits from pre-head features (avoids double backbone pass)."""
+        dropped = self.model.drop(feat) if hasattr(self.model, "drop") else feat
+        if hasattr(self.model, "head") and isinstance(self.model.head, nn.Module):
+            return self.model.head(dropped)
+        return self.model.fc(dropped)
 
     def _extract_labels(self, batch: dict[str, Any]) -> torch.Tensor:
         """Get classification target from a data batch."""
@@ -206,13 +290,34 @@ class Trainer:
         total_loss = 0.0
         correct = 0
         total = 0
+        use_proto_loss = (
+            self.prototype is not None
+            and epoch > self.prototype.warmup_epochs
+        )
 
         for step, batch in enumerate(self.train_loader, 1):
             x = self._prepare_input(batch)
             y = self._extract_labels(batch)
 
-            logits = self.model(x)
+            if self.prototype is not None:
+                # Split forward: features → logits  (single backbone pass).
+                feat = self.model.forward_features(x)
+                logits = self._classify_features(feat)
+            else:
+                logits = self.model(x)
+
             loss = self.criterion(logits, y)
+
+            # Prototype: surprise-gated update + optional auxiliary loss.
+            if self.prototype is not None:
+                with torch.no_grad():
+                    per_sample_loss = F.cross_entropy(
+                        logits.detach(), y, reduction="none",
+                    )
+                self.prototype.update(feat.detach(), y, per_sample_loss)
+
+                if use_proto_loss:
+                    loss = loss + self.prototype.alignment_loss(feat, y)
 
             self.optimizer.zero_grad()
             loss.backward()

@@ -1,3 +1,25 @@
+# ── HOPE-Hybrid experiment: WM-811K binary classification ────────────
+#
+# Recommended 2-stage experiment sequence:
+#
+#   Stage 1 – multiclass warmup (9-class, optional but recommended):
+#     python scripts/train_classifier.py \
+#       --config configs/modal/experiments/wm811k_hope_hybrid.yaml \
+#       --task-mode multiclass --epochs 15 \
+#       --output-dir outputs/hope_hybrid_multiclass_warmup
+#
+#   Stage 2 – binary fine-tuning (2-class):
+#     python scripts/train_classifier.py \
+#       --config configs/modal/experiments/wm811k_hope_hybrid.yaml \
+#       --finetune-from outputs/hope_hybrid_multiclass_warmup/best.pt \
+#       --lr 1e-4
+#
+# NOTE: use --finetune-from (NOT --resume-from) for cross-task transfer.
+#   --resume-from expects identical num_classes and restores the full
+#   checkpoint strictly; it will crash when num_classes changes (9 -> 2).
+#   --finetune-from loads only backbone weights, skipping the head.
+# ─────────────────────────────────────────────────────────────────────
+
 _base_:
   - ../base/wm811k_classifier.yaml
   - ../models/hope_hybrid.yaml
