@@ -89,6 +89,7 @@ def main() -> int:
         raise ValueError("`data` in the training config must be a mapping.")
     data_section["dataset_config"] = data_config
     task_mode = args.task_mode or config.get("task_mode", "binary")
+    config["task_mode"] = task_mode
     device = resolve_device(args.device)
 
     # CLI overrides.

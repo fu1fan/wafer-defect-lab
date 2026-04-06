@@ -103,6 +103,17 @@ class Trainer:
         self.history: list[dict[str, Any]] = []
         self.start_epoch: int = 1
 
+        # Nested-learning teach-signal mechanism.
+        nested_cfg = config.get("nested_teach", {})
+        self.nested_teach_enabled: bool = bool(nested_cfg.get("enabled", False))
+        self.nested_teach_scale: float = float(nested_cfg.get("teach_scale", 1.0))
+        self.nested_teach_warmup: int = int(nested_cfg.get("warmup_epochs", 2))
+        if self.nested_teach_enabled:
+            print(
+                f"[nested_teach] enabled  scale={self.nested_teach_scale}  "
+                f"warmup={self.nested_teach_warmup} epochs"
+            )
+
         # Optional prototype memory (Nested-Learning-inspired).
         proto_cfg = config.get("prototype")
         if proto_cfg and proto_cfg.get("enabled", False):
@@ -294,19 +305,26 @@ class Trainer:
             self.prototype is not None
             and epoch > self.prototype.warmup_epochs
         )
+        use_nested_teach = (
+            self.nested_teach_enabled
+            and epoch > self.nested_teach_warmup
+            and hasattr(self.model, "forward_with_teach")
+        )
 
         for step, batch in enumerate(self.train_loader, 1):
             x = self._prepare_input(batch)
             y = self._extract_labels(batch)
 
-            if self.prototype is not None:
+            if use_nested_teach:
+                logits, loss = self._nested_teach_step(x, y)
+            elif self.prototype is not None:
                 # Split forward: features → logits  (single backbone pass).
                 feat = self.model.forward_features(x)
                 logits = self._classify_features(feat)
+                loss = self.criterion(logits, y)
             else:
                 logits = self.model(x)
-
-            loss = self.criterion(logits, y)
+                loss = self.criterion(logits, y)
 
             # Prototype: surprise-gated update + optional auxiliary loss.
             if self.prototype is not None:
@@ -319,11 +337,13 @@ class Trainer:
                 if use_proto_loss:
                     loss = loss + self.prototype.alignment_loss(feat, y)
 
-            self.optimizer.zero_grad()
-            loss.backward()
-            if self.grad_clip > 0:
-                nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
-            self.optimizer.step()
+            # nested_teach_step already did zero_grad / backward / step.
+            if not use_nested_teach:
+                self.optimizer.zero_grad()
+                loss.backward()
+                if self.grad_clip > 0:
+                    nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
+                self.optimizer.step()
 
             total_loss += loss.item() * y.size(0)
             correct += (logits.argmax(1) == y).sum().item()
@@ -338,6 +358,63 @@ class Trainer:
                 )
 
         return total_loss / max(total, 1), correct / max(total, 1)
+
+    def _nested_teach_step(
+        self, x: torch.Tensor, y: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Two-pass nested-learning training step.
+
+        Pass 1 (standard): forward → loss → backward → optimizer step.
+        Pass 2 (teach):    compute teach signal from loss gradient w.r.t.
+                           token features, then run forward_with_teach to
+                           trigger inner CMS updates in the nested blocks.
+        """
+        # Pass 1: standard forward + backward.
+        # We need token-level features to compute the teach signal.
+        feat = self.model.stem(x)
+        feat = self.model.patch_embed(feat)
+        B, D, H, W = feat.shape
+        tokens = feat.flatten(2).transpose(1, 2)  # [B, T, D]
+        tokens_for_grad = tokens.detach().requires_grad_(True)
+
+        # Forward through nested blocks (no teach signal).
+        current = tokens_for_grad
+        for block in self.model.nested_blocks:
+            current = block(current)
+        pooled = current.mean(dim=1)
+        pooled = self.model.norm(pooled)
+        logits = self.model.fc(self.model.drop(pooled))
+        loss = self.criterion(logits, y)
+
+        # Compute teach signal: gradient of loss w.r.t. token features.
+        teach_signal = torch.autograd.grad(
+            loss, tokens_for_grad, retain_graph=False, create_graph=False,
+        )[0]
+        teach_signal = teach_signal.detach() * self.nested_teach_scale
+
+        # Surprise value: mean norm of the teach signal.
+        surprise_value = float(teach_signal.norm(dim=-1).mean().item())
+
+        # Standard backward on the full model.
+        self.optimizer.zero_grad()
+        logits_full = self.model(x)
+        loss_full = self.criterion(logits_full, y)
+        loss_full.backward()
+        if self.grad_clip > 0:
+            nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
+        self.optimizer.step()
+
+        # Pass 2: inner CMS updates via teach signal.
+        # The NestedBlock._update_cms handles its own grad context internally
+        # via torch.enable_grad(), so we don't wrap in torch.no_grad().
+        self.model.train()  # nested blocks check .training for updates
+        self.model.forward_with_teach(
+            x.detach(),
+            teach_signal=teach_signal,
+            surprise_value=surprise_value,
+        )
+
+        return logits_full.detach(), loss_full.detach()
 
     @torch.no_grad()
     def _validate(self) -> tuple[float, float]:

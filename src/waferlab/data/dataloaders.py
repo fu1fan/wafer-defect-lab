@@ -5,7 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from torch.utils.data import DataLoader, Subset
+import numpy as np
+import torch
+from torch.utils.data import DataLoader, Subset, WeightedRandomSampler
 
 from ..config import load_yaml_config
 from ..registry import DATASET_REGISTRY
@@ -18,6 +20,50 @@ def load_dataloader_config(config_path: str | Path) -> dict[str, Any]:
 
 
 # ── Classification builders (train / eval) ───────────────────────────
+
+
+def _build_class_balanced_sampler(
+    dataset: Any,
+    task_mode: str,
+) -> WeightedRandomSampler:
+    """Create a WeightedRandomSampler that oversamples minority classes.
+
+    Computes per-sample weight as ``1 / class_count`` so that all classes
+    contribute equally in expectation to each epoch.
+    """
+    from ..models.resnet import FAILURE_TYPE_TO_IDX
+
+    # Unwrap Subset if present.
+    inner = dataset.dataset if isinstance(dataset, Subset) else dataset
+    index_df = inner.index_df
+
+    if task_mode == "multiclass":
+        labels = index_df["failure_type"].map(
+            lambda ft: FAILURE_TYPE_TO_IDX.get(str(ft), 0),
+        ).to_numpy(dtype=np.int64)
+    else:
+        labels = (~index_df["is_normal"]).astype(int).to_numpy(dtype=np.int64)
+
+    # If wrapped in Subset, restrict to the subset indices.
+    if isinstance(dataset, Subset):
+        labels = labels[dataset.indices]
+
+    class_counts = np.bincount(labels)
+    class_weights = 1.0 / np.maximum(class_counts, 1).astype(np.float64)
+    sample_weights = class_weights[labels]
+    sample_weights_t = torch.from_numpy(sample_weights).double()
+
+    num_samples = len(labels)
+    print(
+        f"[class_balanced_sampler] {num_samples} samples, "
+        f"{len(class_counts)} classes, "
+        f"effective oversampling for minority classes enabled"
+    )
+    return WeightedRandomSampler(
+        weights=sample_weights_t,
+        num_samples=num_samples,
+        replacement=True,
+    )
 
 
 def build_classification_dataloaders(
@@ -98,9 +144,18 @@ def build_classification_dataloaders(
     nw = int(data_cfg.get("num_workers", 4))
     pin = bool(data_cfg.get("pin_memory", True))
 
+    # Optional class-balanced sampler for the training set.
+    sampler_type = str(data_cfg.get("sampler", "")).strip().lower()
+    train_sampler = None
+    shuffle_train = True
+    if sampler_type == "class_balanced" and not smoke_test:
+        train_sampler = _build_class_balanced_sampler(train_ds, task_mode)
+        shuffle_train = False  # mutually exclusive with sampler
+
     return {
         "train": DataLoader(
-            train_ds, batch_size=bs, shuffle=True,
+            train_ds, batch_size=bs, shuffle=shuffle_train,
+            sampler=train_sampler,
             num_workers=nw, pin_memory=pin, drop_last=True,
         ),
         "val": DataLoader(
