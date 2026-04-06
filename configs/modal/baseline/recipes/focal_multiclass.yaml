@@ -1,0 +1,5 @@
+train:
+  weight_decay: 1.0e-3
+  grad_clip: 1.0
+  loss_type: focal
+  focal_gamma: 2.0

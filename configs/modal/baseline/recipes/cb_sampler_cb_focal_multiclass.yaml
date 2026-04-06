@@ -1,0 +1,13 @@
+# Combined: Class-Balanced Sampler + CB-Focal alpha weights.
+# Double-balancing: sampler ensures equal class presentation,
+# focal alpha further emphasizes rare-class hard examples.
+# Alpha: effective number (beta=0.999).
+train:
+  weight_decay: 1.0e-3
+  grad_clip: 1.0
+  loss_type: focal
+  focal_gamma: 2.0
+  class_weights: [0.2804, 0.2894, 0.8349, 0.3078, 0.2804, 0.3495, 5.3309, 0.6145, 0.7123]
+
+data:
+  sampler: class_balanced

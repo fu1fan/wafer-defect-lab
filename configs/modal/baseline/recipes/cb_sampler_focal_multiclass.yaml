@@ -1,0 +1,12 @@
+# Class-Balanced Sampler + Focal Loss for multiclass.
+# Uses WeightedRandomSampler (inverse frequency) so all classes appear
+# equally in expectation.  No alpha weights in loss — the sampler
+# handles the re-balancing.
+train:
+  weight_decay: 1.0e-3
+  grad_clip: 1.0
+  loss_type: focal
+  focal_gamma: 2.0
+
+data:
+  sampler: class_balanced

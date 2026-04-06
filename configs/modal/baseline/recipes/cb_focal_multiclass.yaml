@@ -1,0 +1,11 @@
+# Class-Balanced Focal Loss for multiclass.
+# Alpha weights computed from effective number (Cui et al. 2019, beta=0.999)
+# on WM-811K Training split:
+#   none=36730  Center=3462  Donut=409  Edge-Loc=2417  Edge-Ring=8554
+#   Loc=1620    Near-full=54  Random=609  Scratch=500
+train:
+  weight_decay: 1.0e-3
+  grad_clip: 1.0
+  loss_type: focal
+  focal_gamma: 2.0
+  class_weights: [0.2804, 0.2894, 0.8349, 0.3078, 0.2804, 0.3495, 5.3309, 0.6145, 0.7123]
