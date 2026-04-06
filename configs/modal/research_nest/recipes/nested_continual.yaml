@@ -1,0 +1,10 @@
+# Nested continual-learning recipe.
+# CE loss + nested teach-signal with surprise gating for anti-forgetting.
+train:
+  weight_decay: 1.0e-3
+  grad_clip: 1.0
+  loss_type: ce
+  nested_teach:
+    enabled: true
+    teach_scale: 1.0
+    warmup_epochs: 1

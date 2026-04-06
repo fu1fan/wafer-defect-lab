@@ -1,0 +1,50 @@
+# v4 Experiment: v3 + fixed best-checkpoint selection
+#
+# v3 had a critical issue: best.pt was loaded for ALL tasks, but the
+# selection criterion (full-test val_acc) is meaningless for intermediate
+# tasks when "none" class (93% of test data) hasn't been learned yet.
+# This caused task 1 acquisition to collapse from 75.9% to 6.7%.
+#
+# Fix: only load best.pt for the final task (when all classes are visible
+# and val_acc metric is meaningful). Intermediate tasks use last.pt.
+#
+# Also keeps cap=5000 from v3 to prevent "none" domination.
+#
+# All settings from v3:
+# - Defects-first curriculum
+# - NO CMS slow freeze
+# - sqrt_inv_freq class weights only (no balanced sampling)
+# - 1000 exemplars per class replay
+# - max_samples_per_class: 5000
+# - 15 epochs per task
+
+_base_:
+  - ../../base/wm811k_classifier.yaml
+  - ../models/nested_selfmod.yaml
+  - ../recipes/nested_continual.yaml
+
+task_mode: multiclass
+
+train:
+  epochs: 15
+  lr: 5.0e-4
+  weight_decay: 1.0e-3
+  grad_clip: 1.0
+
+continual:
+  num_tasks: 3
+  classes_per_task: 3
+  eval_after_each_task: true
+  freeze_slow_cms: false
+  class_weight_per_task: true
+  class_weight_mode: sqrt_inv_freq
+  balanced_sampling: false
+  max_samples_per_class: 5000
+  epochs_per_task: [15, 15, 15]
+  task_order:
+    - [1, 2, 3]     # Center, Donut, Edge-Loc
+    - [4, 5, 6]     # Edge-Ring, Loc, Near-full
+    - [7, 8, 0]     # Random, Scratch, none
+  replay:
+    enabled: true
+    exemplars_per_class: 1000

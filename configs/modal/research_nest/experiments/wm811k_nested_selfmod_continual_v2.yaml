@@ -1,0 +1,56 @@
+# v2 Experiment: Best combination based on 4-experiment analysis
+#
+# Key findings from previous experiments:
+# - ExpA: no freeze → great per-task acquisition (90-95%) but catastrophic forgetting
+# - ExpB: balanced_sampling + class_weight = double-correction → kills "none" class
+# - ExpC: CMS freeze → good stability but cripples task 1 acquisition (15.9%)
+# - ExpD: balanced_sampling + sqrt_inv_freq = still double-correction → 43% forgetting
+#
+# Optimal combination (v2):
+# 1. Defects-first curriculum (proven essential for minority class acquisition)
+# 2. NO CMS slow freeze (ExpA proved full plasticity enables real acquisition)
+# 3. Strong replay buffer (1000 exemplars/class to compensate for no-freeze)
+# 4. sqrt-inverse-frequency class weights ONLY (single correction, not double)
+# 5. NO balanced sampling (avoids double-correction with class weights)
+# 6. 15 epochs per task + best-checkpoint loading after each task
+#
+# Critical design decisions:
+# - Class weights alone shift loss gradient toward minority classes
+# - Adding balanced sampling on top changes BOTH loss AND data distribution → over-correction
+# - 1000 exemplars/class gives ~4500 replay after task 1, meaningful vs task 2's 37K samples
+# - Loading best.pt after each task prevents late-epoch degradation (ExpD task 2: 94% → 88%)
+#
+# Usage:
+#   python scripts/train_continual.py \
+#       --config configs/modal/research_nest/experiments/wm811k_nested_selfmod_continual_v2.yaml \
+#       --output-dir outputs/continual_v2
+
+_base_:
+  - ../../base/wm811k_classifier.yaml
+  - ../models/nested_selfmod.yaml
+  - ../recipes/nested_continual.yaml
+
+task_mode: multiclass
+
+train:
+  epochs: 15
+  lr: 5.0e-4
+  weight_decay: 1.0e-3
+  grad_clip: 1.0
+
+continual:
+  num_tasks: 3
+  classes_per_task: 3
+  eval_after_each_task: true
+  freeze_slow_cms: false
+  class_weight_per_task: true
+  class_weight_mode: sqrt_inv_freq
+  balanced_sampling: false
+  epochs_per_task: [15, 15, 15]
+  task_order:
+    - [1, 2, 3]     # Center, Donut, Edge-Loc
+    - [4, 5, 6]     # Edge-Ring, Loc, Near-full
+    - [7, 8, 0]     # Random, Scratch, none
+  replay:
+    enabled: true
+    exemplars_per_class: 1000

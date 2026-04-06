@@ -1,0 +1,42 @@
+# Experiment A: Curriculum Fix + Class Weighting + More Epochs
+#
+# Key changes vs baseline:
+# 1. Task order: defects-first, "none" in last task
+#    Task 0: Center(1), Donut(2), Edge-Loc(3) — 6288 samples
+#    Task 1: Edge-Ring(4), Loc(5), Near-full(6) — 10228 samples
+#    Task 2: Random(7), Scratch(8), none(0) — 37839 samples
+# 2. Per-task inverse-frequency class weights in CE loss
+# 3. 10 epochs per task instead of 5
+# 4. No slow CMS freeze (allow full adaptation)
+#
+# Hypothesis: acquisition failure is caused by putting dominant "none"
+# in task 0, which creates unrecoverable class-0 bias.
+#
+# Usage:
+#   python scripts/train_continual.py \
+#       --config configs/modal/research_nest/experiments/wm811k_nested_selfmod_continual_expA.yaml
+
+_base_:
+  - ../../base/wm811k_classifier.yaml
+  - ../models/nested_selfmod.yaml
+  - ../recipes/nested_continual.yaml
+
+task_mode: multiclass
+
+train:
+  epochs: 10
+  lr: 5.0e-4
+
+continual:
+  num_tasks: 3
+  classes_per_task: 3
+  eval_after_each_task: true
+  freeze_slow_cms: false
+  class_weight_per_task: true
+  balanced_sampling: false
+  epochs_per_task: [10, 10, 10]
+  # Defect-first curriculum: learn patterns before "none" overwhelms
+  task_order:
+    - [1, 2, 3]     # Center, Donut, Edge-Loc
+    - [4, 5, 6]     # Edge-Ring, Loc, Near-full
+    - [7, 8, 0]     # Random, Scratch, none

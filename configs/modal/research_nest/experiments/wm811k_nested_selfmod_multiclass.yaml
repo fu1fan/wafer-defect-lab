@@ -1,0 +1,19 @@
+# WM-811K multiclass classification with Nested SelfMod model.
+#
+# CNN stem (ResNet18 stages 1-2) + Nested Learning HOPE blocks
+# (CMS + SelfModifier + surprise gating).
+#
+# Quick validation:
+#   python scripts/train_classifier.py \
+#       --config configs/modal/research_nest/experiments/wm811k_nested_selfmod_multiclass.yaml \
+#       --smoke-test
+_base_:
+  - ../../base/wm811k_classifier.yaml
+  - ../models/nested_selfmod.yaml
+  - ../recipes/nested_multiclass_default.yaml
+
+task_mode: multiclass
+
+train:
+  epochs: 20
+  lr: 5.0e-4

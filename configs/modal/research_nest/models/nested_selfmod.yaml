@@ -1,0 +1,18 @@
+# Nested SelfMod classifier: CNN stem (ResNet18 stages 1-2) +
+# Nested Learning HOPE blocks (CMS + SelfModifier + surprise gating)
+model:
+  arch: nested_selfmod
+  in_channels: 1
+  token_dim: 192
+  num_nested_blocks: 3
+  patch_stride: 2
+  cms_hidden_multiplier: 4
+  self_mod_hidden: 4
+  surprise_threshold: null
+  dropout: 0.1
+  pretrained_stem: false
+  cms_levels:
+    - name: cms_fast
+      update_period: 1
+    - name: cms_slow
+      update_period: 4

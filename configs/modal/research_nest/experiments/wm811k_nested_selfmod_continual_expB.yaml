@@ -1,0 +1,42 @@
+# Experiment B: Curriculum Fix + Class Weighting + Balanced Sampling + Replay
+#
+# Key changes vs Experiment A:
+# 1. Same defects-first curriculum
+# 2. Class-balanced sampling (WeightedRandomSampler)
+# 3. Exemplar replay: 200 samples per class from previous tasks
+# 4. Slow CMS freeze enabled (test if replay compensates)
+# 5. 10 epochs per task
+#
+# Hypothesis: replay + balanced sampling will improve acquisition
+# while CMS freeze preserves earlier knowledge.
+#
+# Usage:
+#   python scripts/train_continual.py \
+#       --config configs/modal/research_nest/experiments/wm811k_nested_selfmod_continual_expB.yaml
+
+_base_:
+  - ../../base/wm811k_classifier.yaml
+  - ../models/nested_selfmod.yaml
+  - ../recipes/nested_continual.yaml
+
+task_mode: multiclass
+
+train:
+  epochs: 10
+  lr: 5.0e-4
+
+continual:
+  num_tasks: 3
+  classes_per_task: 3
+  eval_after_each_task: true
+  freeze_slow_cms: true
+  class_weight_per_task: true
+  balanced_sampling: true
+  epochs_per_task: [10, 10, 10]
+  task_order:
+    - [1, 2, 3]     # Center, Donut, Edge-Loc
+    - [4, 5, 6]     # Edge-Ring, Loc, Near-full
+    - [7, 8, 0]     # Random, Scratch, none
+  replay:
+    enabled: true
+    exemplars_per_class: 200

@@ -1,0 +1,11 @@
+# Nested multiclass default recipe.
+# Focal loss for class imbalance + nested teach-signal mechanism.
+train:
+  weight_decay: 1.0e-3
+  grad_clip: 1.0
+  loss_type: focal
+  focal_gamma: 2.0
+  nested_teach:
+    enabled: true
+    teach_scale: 1.0
+    warmup_epochs: 2
