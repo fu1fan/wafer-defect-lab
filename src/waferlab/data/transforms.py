@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Any, Callable, Sequence
 
 import torch
+from torchvision.transforms import InterpolationMode
+from torchvision.transforms import functional as TF
 
 
 # ── Input normalization ──────────────────────────────────────────────
@@ -46,12 +48,28 @@ class WaferAugmentation:
     """Simple spatial augmentations safe for wafer maps.
 
     Only applies transformations that preserve discrete wafer-map semantics:
-    horizontal/vertical flips and 90-degree rotations.
+    horizontal/vertical flips, 90-degree rotations, and optional whole-wafer
+    translation / mild scale jitter via nearest-neighbor affine transforms.
     """
 
-    def __init__(self, *, random_flip: bool = True, random_rotate90: bool = True) -> None:
+    def __init__(
+        self,
+        *,
+        random_flip: bool = True,
+        random_rotate90: bool = True,
+        random_translate_frac: float = 0.0,
+        random_scale_min: float = 1.0,
+        random_scale_max: float = 1.0,
+    ) -> None:
         self.random_flip = random_flip
         self.random_rotate90 = random_rotate90
+        self.random_translate_frac = max(float(random_translate_frac), 0.0)
+        self.random_scale_min = float(random_scale_min)
+        self.random_scale_max = float(random_scale_max)
+        if self.random_scale_min <= 0 or self.random_scale_max <= 0:
+            raise ValueError("random_scale_min/max must be positive.")
+        if self.random_scale_min > self.random_scale_max:
+            raise ValueError("random_scale_min cannot exceed random_scale_max.")
 
     def __call__(self, sample: dict) -> dict:
         img = sample["image"]  # [1, H, W]
@@ -59,24 +77,65 @@ class WaferAugmentation:
         do_hflip = self.random_flip and torch.rand(1).item() > 0.5
         do_vflip = self.random_flip and torch.rand(1).item() > 0.5
         k = int(torch.randint(0, 4, (1,)).item()) if self.random_rotate90 else 0
+        tx, ty = self._sample_translate(img)
+        scale = self._sample_scale()
 
-        img = self._apply(img, do_hflip, do_vflip, k)
+        img = self._apply(img, do_hflip, do_vflip, k, tx=tx, ty=ty, scale=scale)
         sample["image"] = img
 
         for mask_key in ("wafer_mask", "defect_mask"):
             if mask_key in sample:
-                sample[mask_key] = self._apply(sample[mask_key], do_hflip, do_vflip, k)
+                sample[mask_key] = self._apply(
+                    sample[mask_key], do_hflip, do_vflip, k, tx=tx, ty=ty, scale=scale,
+                )
 
         return sample
 
+    def _sample_translate(self, img: torch.Tensor) -> tuple[int, int]:
+        if self.random_translate_frac <= 0:
+            return 0, 0
+
+        h, w = img.shape[-2:]
+        max_tx = int(round(w * self.random_translate_frac))
+        max_ty = int(round(h * self.random_translate_frac))
+        tx = int(torch.randint(-max_tx, max_tx + 1, (1,)).item()) if max_tx > 0 else 0
+        ty = int(torch.randint(-max_ty, max_ty + 1, (1,)).item()) if max_ty > 0 else 0
+        return tx, ty
+
+    def _sample_scale(self) -> float:
+        if self.random_scale_min == self.random_scale_max == 1.0:
+            return 1.0
+        return float(
+            torch.empty(1).uniform_(self.random_scale_min, self.random_scale_max).item(),
+        )
+
     @staticmethod
-    def _apply(t: torch.Tensor, hflip: bool, vflip: bool, k: int) -> torch.Tensor:
+    def _apply(
+        t: torch.Tensor,
+        hflip: bool,
+        vflip: bool,
+        k: int,
+        *,
+        tx: int = 0,
+        ty: int = 0,
+        scale: float = 1.0,
+    ) -> torch.Tensor:
         if hflip:
             t = t.flip(-1)
         if vflip:
             t = t.flip(-2)
         if k > 0:
             t = torch.rot90(t, k, dims=(-2, -1))
+        if tx != 0 or ty != 0 or abs(scale - 1.0) > 1e-6:
+            t = TF.affine(
+                t,
+                angle=0.0,
+                translate=[tx, ty],
+                scale=scale,
+                shear=[0.0, 0.0],
+                interpolation=InterpolationMode.NEAREST,
+                fill=0.0,
+            )
         return t
 
 

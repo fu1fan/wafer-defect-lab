@@ -32,6 +32,16 @@ python scripts/train_classifier.py \
   --config configs/modal/baseline/experiments/wm811k_resnet18_recall_opt_focal.yaml
 ```
 
+```bash
+python scripts/train_classifier.py \
+  --config configs/modal/baseline/experiments/wm811k_resnet50_baseline_multiclass.yaml
+```
+
+```bash
+python scripts/train_classifier.py \
+  --config configs/modal/baseline/experiments/wm811k_resnet50_cb_sampler_focal_heavy_aug_multiclass.yaml
+```
+
 ## 约定
 
 - 共享配置放到 `base/`
@@ -46,6 +56,8 @@ python scripts/train_classifier.py \
 
 - `baseline/`
   - `resnet18` baseline
+  - `resnet50` multiclass baseline
+  - `resnet50` multiclass + balanced sampler + focal + heavy aug
   - `resnet18_recall_opt` 及其 CE / Focal 变体
 - `research_hybrid/`
   - 自制 HOPE Hybrid 研究线

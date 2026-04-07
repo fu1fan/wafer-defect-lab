@@ -1,0 +1,18 @@
+# ResNet50 multiclass baseline with stronger imbalance handling:
+# - class-balanced sampler
+# - focal loss
+# - heavier wafer-safe spatial augmentation
+_base_:
+  - ../../base/wm811k_classifier.yaml
+  - ../models/resnet50.yaml
+  - ../recipes/cb_sampler_focal_multiclass.yaml
+
+task_mode: multiclass
+
+data:
+  augment:
+    random_flip: true
+    random_rotate90: true
+    random_translate_frac: 0.08
+    random_scale_min: 0.95
+    random_scale_max: 1.05

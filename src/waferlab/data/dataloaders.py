@@ -99,11 +99,26 @@ def build_classification_dataloaders(
 
     # Assemble per-split transforms.
     train_transforms: list = []
-    if aug_cfg.get("random_flip", True) or aug_cfg.get("random_rotate90", True):
+    random_flip = bool(aug_cfg.get("random_flip", True))
+    random_rotate90 = bool(aug_cfg.get("random_rotate90", True))
+    random_translate_frac = float(aug_cfg.get("random_translate_frac", 0.0))
+    random_scale_min = float(aug_cfg.get("random_scale_min", 1.0))
+    random_scale_max = float(aug_cfg.get("random_scale_max", 1.0))
+    has_spatial_aug = (
+        random_flip
+        or random_rotate90
+        or random_translate_frac > 0
+        or abs(random_scale_min - 1.0) > 1e-6
+        or abs(random_scale_max - 1.0) > 1e-6
+    )
+    if has_spatial_aug:
         train_transforms.append(
             WaferAugmentation(
-                random_flip=aug_cfg.get("random_flip", True),
-                random_rotate90=aug_cfg.get("random_rotate90", True),
+                random_flip=random_flip,
+                random_rotate90=random_rotate90,
+                random_translate_frac=random_translate_frac,
+                random_scale_min=random_scale_min,
+                random_scale_max=random_scale_max,
             )
         )
     if task_mode == "multiclass":
