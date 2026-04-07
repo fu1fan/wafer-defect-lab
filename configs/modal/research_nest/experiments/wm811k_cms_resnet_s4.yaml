@@ -1,0 +1,34 @@
+# Search S4: Balanced sampler + Focal loss (gamma=2) + sqrt_inv_freq, no KD
+_base_:
+  - ../../base/wm811k_classifier.yaml
+  - ../models/nested_cms_resnet.yaml
+  - ../recipes/nested_continual.yaml
+
+task_mode: multiclass
+
+train:
+  epochs: 3
+  lr: 5.0e-4
+  weight_decay: 1.0e-3
+  grad_clip: 1.0
+  loss_type: focal
+  focal_gamma: 2.0
+
+continual:
+  num_tasks: 3
+  classes_per_task: 3
+  eval_after_each_task: true
+  freeze_slow_cms: false
+  class_weight_per_task: true
+  class_weight_mode: sqrt_inv_freq
+  balanced_sampling: true
+  max_samples_per_class: 5000
+  epochs_per_task: [3, 3, 3]
+  load_best_final: false
+  task_order:
+    - [1, 2, 3]
+    - [4, 5, 6]
+    - [7, 8, 0]
+  replay:
+    enabled: true
+    exemplars_per_class: 1000
