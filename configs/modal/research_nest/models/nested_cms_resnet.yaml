@@ -1,0 +1,18 @@
+# Nested CMS ResNet: Full ResNet18 backbone + vector-level CMS/SelfModifier
+# De-tokenized architecture that eliminates patch embedding overhead
+model:
+  arch: nested_cms_resnet
+  in_channels: 1
+  backbone: resnet18
+  feat_dim: 256
+  num_nested_blocks: 2
+  cms_hidden_multiplier: 4
+  self_mod_hidden: 4
+  surprise_threshold: null
+  dropout: 0.1
+  pretrained: false
+  cms_levels:
+    - name: cms_fast
+      update_period: 1
+    - name: cms_slow
+      update_period: 4

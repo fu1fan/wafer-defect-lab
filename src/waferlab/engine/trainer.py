@@ -81,9 +81,10 @@ class Trainer:
         }
         self.scheduler = SCHEDULER_REGISTRY.build(scheduler_name, sched_cfg)
 
-        # Loss function: CE (default) or Focal Loss.
+        # Loss function: CE (default), Focal, BalancedSoftmax, or LogitAdjusted.
         loss_type = str(config.get("loss_type", "ce")).lower()
         class_weights = config.get("class_weights")
+        class_counts = config.get("class_counts")
 
         if loss_type == "focal":
             from .losses import FocalLoss
@@ -92,6 +93,17 @@ class Trainer:
             self.criterion = FocalLoss(
                 gamma=focal_gamma, alpha=focal_alpha, reduction="mean",
             )
+        elif loss_type == "balanced_softmax":
+            from .losses import BalancedSoftmaxLoss
+            if class_counts is None:
+                raise ValueError("balanced_softmax loss requires 'class_counts'")
+            self.criterion = BalancedSoftmaxLoss(class_counts)
+        elif loss_type == "logit_adjustment":
+            from .losses import LogitAdjustedLoss
+            if class_counts is None:
+                raise ValueError("logit_adjustment loss requires 'class_counts'")
+            la_tau = float(config.get("la_tau", 1.0))
+            self.criterion = LogitAdjustedLoss(class_counts, tau=la_tau)
         else:
             if class_weights is not None:
                 w = torch.tensor(class_weights, dtype=torch.float32, device=self.device)
@@ -438,15 +450,26 @@ class Trainer:
 
         Pass 1 (standard): forward → loss → backward → optimizer step.
         Pass 2 (teach):    compute teach signal from loss gradient w.r.t.
-                           token features, then run forward_with_teach to
-                           trigger inner CMS updates in the nested blocks.
+                           pre-nested-block features, then run forward_with_teach
+                           to trigger inner CMS updates in the nested blocks.
+
+        Supports both token-based (NestedSelfModClassifier) and vector-based
+        (NestedCMSResNetClassifier) architectures.
         """
-        # Pass 1: standard forward + backward.
-        # We need token-level features to compute the teach signal.
-        feat = self.model.stem(x)
-        feat = self.model.patch_embed(feat)
-        B, D, H, W = feat.shape
-        tokens = feat.flatten(2).transpose(1, 2)  # [B, T, D]
+        # Pass 1: Extract pre-nested-block features for teach signal computation.
+        if hasattr(self.model, "patch_embed"):
+            # Token-based model: stem → patch_embed → flatten → tokens.
+            feat = self.model.stem(x)
+            feat = self.model.patch_embed(feat)
+            B, D, H, W = feat.shape
+            tokens = feat.flatten(2).transpose(1, 2)  # [B, T, D]
+        else:
+            # Vector-based model: backbone → global_pool → proj → [B, 1, D].
+            feat = self.model.backbone(x)
+            feat = self.model.global_pool(feat).flatten(1)
+            feat = self.model.proj(feat)
+            tokens = feat.unsqueeze(1)  # [B, 1, D]
+
         tokens_for_grad = tokens.detach().requires_grad_(True)
 
         # Forward through nested blocks (no teach signal).

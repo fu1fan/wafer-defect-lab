@@ -638,6 +638,13 @@ def main() -> int:
             active_cw = {c: cw[c] for c in sorted(set(combined_labels))}
             print(f"  Class weights: { {FAILURE_TYPE_NAMES[c]: f'{w:.2f}' for c, w in active_cw.items()} }")
 
+        # Always provide class_counts for losses that need them (balanced_softmax, logit_adjustment).
+        cc = [0.0] * len(FAILURE_TYPE_TO_IDX)
+        for lbl in combined_labels:
+            if lbl < len(cc):
+                cc[lbl] += 1.0
+        task_train_cfg["class_counts"] = cc
+
         # Build dataloader with optional balanced sampling.
         bs = int(data_section.get("batch_size", 64))
         nw = int(data_section.get("num_workers", 4))

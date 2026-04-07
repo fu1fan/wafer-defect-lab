@@ -71,3 +71,58 @@ class FocalLoss(nn.Module):
         elif self.reduction == "sum":
             return loss.sum()
         return loss
+
+
+class BalancedSoftmaxLoss(nn.Module):
+    """Balanced Softmax Loss (Ren et al., 2020).
+
+    Adjusts the logits by adding ``log(class_prior)`` before softmax,
+    which compensates for class frequency imbalance at training time.
+
+    .. math::
+        \\mathcal{L} = -\\log \\frac{n_y \\exp(z_y)}{\\sum_c n_c \\exp(z_c)}
+
+    Parameters
+    ----------
+    class_counts : list[float]
+        Per-class sample counts (or frequencies).
+    """
+
+    def __init__(self, class_counts: list[float]) -> None:
+        super().__init__()
+        counts = torch.tensor(class_counts, dtype=torch.float32)
+        # Avoid log(0) by clamping.
+        self.register_buffer("log_prior", torch.log(counts.clamp(min=1.0)))
+
+    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        adjusted = logits + self.log_prior.to(logits.device)
+        return F.cross_entropy(adjusted, targets)
+
+
+class LogitAdjustedLoss(nn.Module):
+    """Logit-Adjusted Loss (Menon et al., 2021).
+
+    Subtracts ``tau * log(class_prior)`` from logits before CE, which is
+    the Bayes-optimal adjustment for long-tailed distributions.
+
+    .. math::
+        \\mathcal{L} = CE(z - \\tau \\log \\pi, y)
+
+    Parameters
+    ----------
+    class_counts : list[float]
+        Per-class sample counts.
+    tau : float
+        Temperature for the logit adjustment (default 1.0).
+    """
+
+    def __init__(self, class_counts: list[float], tau: float = 1.0) -> None:
+        super().__init__()
+        counts = torch.tensor(class_counts, dtype=torch.float32)
+        priors = counts / counts.sum()
+        self.register_buffer("log_prior", torch.log(priors.clamp(min=1e-8)))
+        self.tau = tau
+
+    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        adjusted = logits - self.tau * self.log_prior.to(logits.device)
+        return F.cross_entropy(adjusted, targets)
