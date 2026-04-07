@@ -1,0 +1,54 @@
+# v5d: Mild KD + WA + no best.pt selection (refined from v5a/v5b lessons)
+#
+# Lessons from small-scale experiments:
+# - v5a (alpha=0.5, T=2.0, WA): KD helped intermediate tasks but none
+#   dominated final model. best.pt selection picked none-biased model.
+# - v5b (alpha=0.3, T=3.0, WA): KD too strong, model couldn't learn task 2.
+#
+# Design:
+# - Mild KD (alpha=0.7 = 30% KD) to preserve old boundaries without
+#   blocking new-class learning.
+# - WA for bias correction after each task.
+# - NO best.pt for final task (last.pt is better balanced with KD).
+# - Small-scale test first (5 epochs).
+
+_base_:
+  - ../../base/wm811k_classifier.yaml
+  - ../models/nested_selfmod.yaml
+  - ../recipes/nested_continual.yaml
+
+task_mode: multiclass
+
+train:
+  epochs: 5
+  lr: 5.0e-4
+  weight_decay: 1.0e-3
+  grad_clip: 1.0
+
+continual:
+  num_tasks: 3
+  classes_per_task: 3
+  eval_after_each_task: true
+  freeze_slow_cms: false
+  class_weight_per_task: true
+  class_weight_mode: sqrt_inv_freq
+  balanced_sampling: false
+  max_samples_per_class: 5000
+  epochs_per_task: [5, 5, 5]
+  load_best_final: false
+  task_order:
+    - [1, 2, 3]     # Center, Donut, Edge-Loc
+    - [4, 5, 6]     # Edge-Ring, Loc, Near-full
+    - [7, 8, 0]     # Random, Scratch, none
+
+  replay:
+    enabled: true
+    exemplars_per_class: 1000
+
+  knowledge_distillation:
+    enabled: true
+    alpha: 0.7
+    temperature: 2.0
+
+  weight_alignment:
+    enabled: true

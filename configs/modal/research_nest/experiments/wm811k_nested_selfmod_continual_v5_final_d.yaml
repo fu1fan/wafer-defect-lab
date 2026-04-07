@@ -1,0 +1,53 @@
+# v5_final_d: Additive Masked KD (lambda=1.0) + replay-only KD + 15 epochs
+#
+# Key insight from v5_final_c: additive KD on ALL samples causes CE-KD conflict
+# on `none` samples. The teacher (trained on tasks 0+1, no `none`) outputs
+# old-class predictions for `none` samples, pushing old logits high while CE
+# pushes class-0 logit high. This conflict overwhelms the model.
+#
+# Fix: apply KD ONLY to old-class (replay) samples where teacher predictions
+# are meaningful. New-class samples (none, Random, Scratch) only get CE.
+#
+# CE on all samples: full learning of new + replay classes
+# KD on replay samples: teacher's predictions are valid for old-class data
+#
+# lambda=1.0, masked to old-class logit dims, replay_only=true
+
+_base_:
+  - ../../base/wm811k_classifier.yaml
+  - ../models/nested_selfmod.yaml
+  - ../recipes/nested_continual.yaml
+
+task_mode: multiclass
+
+train:
+  epochs: 15
+  lr: 5.0e-4
+  weight_decay: 1.0e-3
+  grad_clip: 1.0
+
+continual:
+  num_tasks: 3
+  classes_per_task: 3
+  eval_after_each_task: true
+  freeze_slow_cms: false
+  class_weight_per_task: true
+  class_weight_mode: sqrt_inv_freq
+  balanced_sampling: false
+  max_samples_per_class: 5000
+  epochs_per_task: [15, 15, 15]
+  load_best_final: false
+  task_order:
+    - [1, 2, 3]     # Center, Donut, Edge-Loc
+    - [4, 5, 6]     # Edge-Ring, Loc, Near-full
+    - [7, 8, 0]     # Random, Scratch, none
+
+  replay:
+    enabled: true
+    exemplars_per_class: 1000
+
+  knowledge_distillation:
+    enabled: true
+    lambda: 1.0
+    temperature: 2.0
+    replay_only: true

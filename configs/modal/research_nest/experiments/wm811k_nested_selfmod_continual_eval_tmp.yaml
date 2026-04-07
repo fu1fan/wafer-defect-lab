@@ -1,0 +1,29 @@
+# WM-811K continual-learning experiment with Nested SelfMod model.
+#
+# Class-incremental: 3 tasks of 3 classes each.
+# CMS multi-frequency memory + surprise gating for anti-forgetting.
+#
+# Use the continual-learning training script:
+#   python scripts/train_continual.py \
+#       --config configs/modal/research_nest/experiments/wm811k_nested_selfmod_continual.yaml \
+#       --smoke-test
+_base_:
+  - ../../base/wm811k_classifier.yaml
+  - ../models/nested_selfmod.yaml
+  - ../recipes/nested_continual.yaml
+
+task_mode: multiclass
+
+train:
+  epochs: 5
+  lr: 5.0e-4
+
+continual:
+  num_tasks: 3
+  classes_per_task: 3
+  eval_after_each_task: true
+  # CMS slow level frozen during continual tasks after warmup
+  freeze_slow_cms: true
+
+data:
+  num_workers: 0

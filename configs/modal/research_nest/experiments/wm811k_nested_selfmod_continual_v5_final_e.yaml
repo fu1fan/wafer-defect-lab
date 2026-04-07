@@ -1,0 +1,51 @@
+# v5_final_e: Weaker replay-only KD (lambda=0.3) + 15 epochs
+#
+# v5_final_d (lambda=1.0, replay_only) showed:
+#   - Excellent forgetting (0.147) but none=0.000 → macro=0.183
+#   - KD too strong: preserved old features so well that none couldn't be learned
+#
+# Reduce lambda from 1.0 to 0.3 to find the middle ground between:
+#   - v4 (no KD): none=0.998, forget=0.338, macro=0.389
+#   - v5_final_d (λ=1.0): none=0.000, forget=0.147, macro=0.183
+#
+# lambda=0.3 should allow more plasticity for none learning 
+# while still providing some old-class preservation from KD.
+
+_base_:
+  - ../../base/wm811k_classifier.yaml
+  - ../models/nested_selfmod.yaml
+  - ../recipes/nested_continual.yaml
+
+task_mode: multiclass
+
+train:
+  epochs: 15
+  lr: 5.0e-4
+  weight_decay: 1.0e-3
+  grad_clip: 1.0
+
+continual:
+  num_tasks: 3
+  classes_per_task: 3
+  eval_after_each_task: true
+  freeze_slow_cms: false
+  class_weight_per_task: true
+  class_weight_mode: sqrt_inv_freq
+  balanced_sampling: false
+  max_samples_per_class: 5000
+  epochs_per_task: [15, 15, 15]
+  load_best_final: false
+  task_order:
+    - [1, 2, 3]     # Center, Donut, Edge-Loc
+    - [4, 5, 6]     # Edge-Ring, Loc, Near-full
+    - [7, 8, 0]     # Random, Scratch, none
+
+  replay:
+    enabled: true
+    exemplars_per_class: 1000
+
+  knowledge_distillation:
+    enabled: true
+    lambda: 0.3
+    temperature: 2.0
+    replay_only: true

@@ -1,0 +1,52 @@
+# v5a: v4 + LwF Knowledge Distillation + Weight Alignment
+#
+# Literature: LwF (Li & Hoiem 2017), WA (Zhao et al. 2020)
+#
+# Hypothesis: v4's catastrophic forgetting (Task 0 classes: 0.857→0.222)
+# is caused by decision boundary drift without any distillation mechanism.
+# Adding KD loss preserves old task logit structure, and WA corrects the
+# classifier norm bias toward recently learned classes.
+#
+# KD: alpha=0.5 (equal CE and KD), T=2.0
+# WA: enabled after each task increment
+# All other settings identical to v4.
+
+_base_:
+  - ../../base/wm811k_classifier.yaml
+  - ../models/nested_selfmod.yaml
+  - ../recipes/nested_continual.yaml
+
+task_mode: multiclass
+
+train:
+  epochs: 5
+  lr: 5.0e-4
+  weight_decay: 1.0e-3
+  grad_clip: 1.0
+
+continual:
+  num_tasks: 3
+  classes_per_task: 3
+  eval_after_each_task: true
+  freeze_slow_cms: false
+  class_weight_per_task: true
+  class_weight_mode: sqrt_inv_freq
+  balanced_sampling: false
+  max_samples_per_class: 5000
+  epochs_per_task: [5, 5, 5]
+  task_order:
+    - [1, 2, 3]     # Center, Donut, Edge-Loc
+    - [4, 5, 6]     # Edge-Ring, Loc, Near-full
+    - [7, 8, 0]     # Random, Scratch, none
+
+  replay:
+    enabled: true
+    exemplars_per_class: 1000
+
+  knowledge_distillation:
+    enabled: true
+    alpha: 0.5
+    temperature: 2.0
+
+  weight_alignment:
+    enabled: true

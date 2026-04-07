@@ -28,6 +28,7 @@ Examples
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import random
 from collections import Counter, defaultdict
@@ -38,6 +39,7 @@ from typing import Any
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.utils.data import ConcatDataset, DataLoader, Subset, WeightedRandomSampler
 
 from waferlab.config import load_yaml_config
@@ -336,6 +338,93 @@ def unfreeze_all_cms(model: nn.Module) -> None:
                     p.requires_grad_(True)
 
 
+# ---------- Weight Alignment (WA) – bias correction ---------------------
+
+def weight_alignment(
+    model: nn.Module,
+    old_classes: set[int],
+    new_classes: set[int],
+) -> None:
+    """Post-task Weight Alignment (Zhao et al., 2020).
+
+    Scales the classifier weight rows of *new* classes so that their
+    mean L2-norm matches the mean norm of *old* class rows.  This
+    corrects the bias toward the most-recently-learned classes whose
+    weights tend to have larger norms.
+    """
+    fc = _get_fc_layer(model)
+    if fc is None:
+        print("  [WA] WARNING: could not locate FC layer")
+        return
+    with torch.no_grad():
+        w = fc.weight.data  # [num_classes, feat_dim]
+        old_idx = sorted(old_classes)
+        new_idx = sorted(new_classes)
+        if not old_idx or not new_idx:
+            return
+        old_norms = w[old_idx].norm(dim=1)
+        new_norms = w[new_idx].norm(dim=1)
+        mean_old = old_norms.mean()
+        mean_new = new_norms.mean()
+        if mean_new > 1e-8:
+            gamma = mean_old / mean_new
+            w[new_idx] *= gamma
+            print(f"  [WA] old_norm={mean_old:.4f}  new_norm={mean_new:.4f}  "
+                  f"gamma={gamma:.4f}")
+
+
+def _get_fc_layer(model: nn.Module) -> nn.Linear | None:
+    """Return the final classification Linear layer."""
+    if hasattr(model, "fc") and isinstance(model.fc, nn.Linear):
+        return model.fc
+    if hasattr(model, "head") and isinstance(model.head, nn.Sequential):
+        for m in reversed(list(model.head.modules())):
+            if isinstance(m, nn.Linear):
+                return m
+    return None
+
+
+# ---------- Cosine-normalized classifier ---------------------------------
+
+class CosineLinear(nn.Module):
+    """Cosine-normalized linear classifier (LUCIR-style).
+
+    Removes magnitude bias: similarity = eta * cos(w_c, f).
+    """
+
+    def __init__(self, in_features: int, out_features: int, eta: float = 10.0) -> None:
+        super().__init__()
+        self.weight = nn.Parameter(torch.empty(out_features, in_features))
+        nn.init.kaiming_uniform_(self.weight, a=5 ** 0.5)
+        self.eta = eta
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x_norm = F.normalize(x, dim=1)
+        w_norm = F.normalize(self.weight, dim=1)
+        return self.eta * F.linear(x_norm, w_norm)
+
+
+def replace_fc_with_cosine(model: nn.Module, eta: float = 10.0) -> None:
+    """Replace the model's FC head with a CosineLinear layer."""
+    fc = _get_fc_layer(model)
+    if fc is None:
+        print("  [cosine] WARNING: could not locate FC layer")
+        return
+    cosine_head = CosineLinear(fc.in_features, fc.out_features, eta=eta)
+    # Copy existing weight as initialization.
+    with torch.no_grad():
+        cosine_head.weight.copy_(fc.weight)
+    if hasattr(model, "fc") and isinstance(model.fc, nn.Linear):
+        model.fc = cosine_head
+    elif hasattr(model, "head") and isinstance(model.head, nn.Sequential):
+        # Replace the last Linear in the head.
+        for i in range(len(model.head) - 1, -1, -1):
+            if isinstance(model.head[i], nn.Linear):
+                model.head[i] = cosine_head
+                break
+    print(f"  [cosine] Replaced FC with CosineLinear (eta={eta})")
+
+
 def main() -> int:
     args = parse_args()
     config = load_yaml_config(args.config)
@@ -374,6 +463,27 @@ def main() -> int:
 
     # Custom task ordering (list of lists of class indices).
     task_order_cfg = continual_cfg.get("task_order")
+
+    # Knowledge distillation config (LwF-style).
+    kd_cfg = continual_cfg.get("knowledge_distillation", {})
+    kd_enabled = bool(kd_cfg.get("enabled", False))
+    kd_alpha = float(kd_cfg.get("alpha", 0.5))        # weight for CE loss
+    kd_temperature = float(kd_cfg.get("temperature", 2.0))
+    kd_lambda = float(kd_cfg.get("lambda", 0.0))      # additive mode: CE + lambda*KD
+    kd_replay_only = bool(kd_cfg.get("replay_only", False))  # KD on old-class samples only
+    kd_skip_tasks: list[int] = list(kd_cfg.get("skip_tasks", []))  # task indices to skip KD
+
+    # Weight alignment config (WA bias correction).
+    wa_cfg = continual_cfg.get("weight_alignment", {})
+    wa_enabled = bool(wa_cfg.get("enabled", False))
+
+    # Cosine classifier config (LUCIR-style).
+    cosine_cfg = continual_cfg.get("cosine_classifier", {})
+    cosine_enabled = bool(cosine_cfg.get("enabled", False))
+    cosine_eta = float(cosine_cfg.get("eta", 10.0))
+
+    # Whether to load best.pt for the final task (can harm KD setups).
+    load_best_final = bool(continual_cfg.get("load_best_final", True))
 
     if args.smoke_test:
         train_cfg["epochs"] = 1
@@ -416,6 +526,8 @@ def main() -> int:
         print(f"  Task {ti}: classes {tc} ({names}) — {ep} epochs")
     print(f"  freeze_slow_cms={do_freeze_slow}  class_weight={do_class_weight}  "
           f"balanced_sampling={do_balanced_sampling}  replay={replay_enabled}")
+    print(f"  kd={kd_enabled}(alpha={kd_alpha}, lambda={kd_lambda}, T={kd_temperature}, replay_only={kd_replay_only})  "
+          f"wa={wa_enabled}  cosine_head={cosine_enabled}")
     print()
 
     # Build dataloaders (full multiclass set).
@@ -431,8 +543,15 @@ def main() -> int:
     model = MODEL_REGISTRY.build(model_cfg.get("arch", "nested_selfmod"), model_cfg)
     model = model.to(dev)
 
+    # Optionally replace FC with cosine-normalized head.
+    if cosine_enabled:
+        replace_fc_with_cosine(model, eta=cosine_eta)
+
     # Replay buffer.
     replay_buffer = ExemplarBuffer(replay_per_class) if replay_enabled else None
+
+    # Teacher model for KD (will be set after first task).
+    teacher_model: nn.Module | None = None
 
     # Results tracking.
     task_accuracy_matrix: list[list[float]] = []
@@ -541,15 +660,40 @@ def main() -> int:
         if task_idx > 0 and do_freeze_slow:
             freeze_slow_cms(model)
 
+        # Snapshot teacher model for KD BEFORE training on new task.
+        kd_active = kd_enabled and task_idx > 0 and task_idx not in kd_skip_tasks
+        if kd_active:
+            teacher_model = copy.deepcopy(model)
+            teacher_model.eval()
+            for p in teacher_model.parameters():
+                p.requires_grad_(False)
+            print(f"  [KD] Teacher snapshot saved (alpha={kd_alpha}, T={kd_temperature})")
+
         # Create a task-specific trainer.
         task_output = output_dir / f"task_{task_idx}"
+        task_train_cfg["kd_alpha"] = kd_alpha if kd_active else 1.0
+        task_train_cfg["kd_temperature"] = kd_temperature
+        task_train_cfg["kd_lambda"] = kd_lambda if kd_active else 0.0
+        task_train_cfg["kd_replay_only"] = kd_replay_only if kd_active else False
         trainer = Trainer(
             model, task_train_loader, val_loader, task_train_cfg,
             device=device,
             output_dir=task_output,
             task_mode=task_mode,
         )
+        if kd_active and teacher_model is not None:
+            trainer.set_teacher(teacher_model)
+            # Masked KD: only distill old-class logits (avoids noise on new classes).
+            old_classes_for_kd = sorted(all_seen_classes - task_class_set)
+            trainer.kd_old_classes = old_classes_for_kd
+            print(f"  [KD] Masked distillation on old classes: {old_classes_for_kd}")
         trainer.fit()
+
+        # Free teacher to reclaim memory.
+        if teacher_model is not None:
+            del teacher_model
+            teacher_model = None
+            torch.cuda.empty_cache()
 
         # Load best checkpoint ONLY for the final task.
         # For intermediate tasks, val_acc is on the full test set where unseen
@@ -558,12 +702,17 @@ def main() -> int:
         # checkpoint that barely learned the current task.
         is_final_task = (task_idx == len(tasks) - 1)
         best_ckpt = task_output / "best.pt"
-        if is_final_task and best_ckpt.exists():
+        if is_final_task and load_best_final and best_ckpt.exists():
             ckpt = torch.load(best_ckpt, map_location=dev, weights_only=True)
             model.load_state_dict(ckpt["model_state_dict"])
             print(f"  [checkpoint] Loaded best.pt from task {task_idx} (final task)")
         else:
             print(f"  [checkpoint] Using last epoch model for task {task_idx}")
+
+        # Post-task Weight Alignment (bias correction).
+        if wa_enabled and task_idx > 0:
+            old_cl = all_seen_classes - task_class_set
+            weight_alignment(model, old_cl, task_class_set)
 
         # Unfreeze for evaluation.
         unfreeze_all_cms(model)
@@ -649,6 +798,12 @@ def main() -> int:
             "replay_enabled": replay_enabled,
             "replay_per_class": replay_per_class if replay_enabled else None,
             "epochs_per_task": epochs_schedule,
+            "kd_enabled": kd_enabled,
+            "kd_alpha": kd_alpha if kd_enabled else None,
+            "kd_lambda": kd_lambda if kd_enabled else None,
+            "kd_temperature": kd_temperature if kd_enabled else None,
+            "wa_enabled": wa_enabled,
+            "cosine_classifier": cosine_enabled,
         },
         "created_at": datetime.now().isoformat(),
     }

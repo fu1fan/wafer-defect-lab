@@ -1,0 +1,58 @@
+# v5_final: Masked KD (alpha=0.7) + full 15-epoch training
+#
+# Selected from small-scale experiments (v5a-v5e):
+# - Masked KD (iCaRL/LUCIR-style) is the critical improvement:
+#   only distills old-class logits, avoids teacher noise on new classes.
+# - Alpha=0.7 (30% KD weight) is the sweet spot: enough preservation
+#   without blocking new-class learning.
+# - WA disabled: overcorrects when "none" (93% test) is in new-class set.
+# - load_best_final=false: val_acc dominated by "none", unreliable for
+#   checkpoint selection.
+#
+# Literature basis:
+# - LwF (Li & Hoiem 2017): KD on old-class outputs
+# - iCaRL (Rebuffi et al. 2017): masked distillation + exemplar replay
+# - LUCIR (Hou et al. 2019): old-class logit preservation
+#
+# Expected outcome vs v4:
+# - Significantly reduced forgetting (v5d 5ep: 0.255 vs v4-short 0.498)
+# - Better preservation of old defect classes
+# - Competitive or better macro accuracy
+
+_base_:
+  - ../../base/wm811k_classifier.yaml
+  - ../models/nested_selfmod.yaml
+  - ../recipes/nested_continual.yaml
+
+task_mode: multiclass
+
+train:
+  epochs: 15
+  lr: 5.0e-4
+  weight_decay: 1.0e-3
+  grad_clip: 1.0
+
+continual:
+  num_tasks: 3
+  classes_per_task: 3
+  eval_after_each_task: true
+  freeze_slow_cms: false
+  class_weight_per_task: true
+  class_weight_mode: sqrt_inv_freq
+  balanced_sampling: false
+  max_samples_per_class: 5000
+  epochs_per_task: [15, 15, 15]
+  load_best_final: false
+  task_order:
+    - [1, 2, 3]     # Center, Donut, Edge-Loc
+    - [4, 5, 6]     # Edge-Ring, Loc, Near-full
+    - [7, 8, 0]     # Random, Scratch, none
+
+  replay:
+    enabled: true
+    exemplars_per_class: 1000
+
+  knowledge_distillation:
+    enabled: true
+    alpha: 0.7
+    temperature: 2.0

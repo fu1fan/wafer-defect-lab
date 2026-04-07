@@ -103,6 +103,18 @@ class Trainer:
         self.history: list[dict[str, Any]] = []
         self.start_epoch: int = 1
 
+        # Knowledge distillation (LwF / DER style).
+        self.teacher_model: nn.Module | None = None
+        self.kd_alpha: float = float(config.get("kd_alpha", 1.0))
+        self.kd_temperature: float = float(config.get("kd_temperature", 2.0))
+        # Additive KD: loss = CE + kd_lambda * KD (standard LwF formulation).
+        # When kd_lambda > 0, additive mode is used (kd_alpha is ignored).
+        self.kd_lambda: float = float(config.get("kd_lambda", 0.0))
+        # Old-class indices to mask KD loss (None = use all logits).
+        self.kd_old_classes: list[int] | None = None
+        # Only apply KD to old-class (replay) samples, not new-class ones.
+        self.kd_replay_only: bool = bool(config.get("kd_replay_only", False))
+
         # Nested-learning teach-signal mechanism.
         nested_cfg = config.get("nested_teach", {})
         self.nested_teach_enabled: bool = bool(nested_cfg.get("enabled", False))
@@ -139,6 +151,15 @@ class Trainer:
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+
+    def set_teacher(self, teacher_model: nn.Module | None) -> None:
+        """Set a frozen teacher model for knowledge distillation (LwF)."""
+        if teacher_model is not None:
+            teacher_model = teacher_model.to(self.device)
+            teacher_model.eval()
+            for p in teacher_model.parameters():
+                p.requires_grad_(False)
+        self.teacher_model = teacher_model
 
     def fit(self) -> list[dict[str, Any]]:
         """Run the full training loop. Returns epoch-level history."""
@@ -288,6 +309,49 @@ class Trainer:
         # multiclass: failure_type_idx pre-computed by the dataset/collate.
         return batch["failure_type_idx"].to(self.device, dtype=torch.long)
 
+    def _compute_kd_loss(
+        self, student_logits: torch.Tensor, x: torch.Tensor,
+        y: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """Compute masked knowledge distillation loss (LwF / iCaRL style).
+
+        If ``kd_old_classes`` is set, only the old-class logit dimensions
+        are used for the KL-divergence.  This avoids distilling the
+        teacher's noise on new-class neurons.
+
+        If ``kd_replay_only`` is True and *y* is provided, the KD loss is
+        computed **only** on samples whose label belongs to ``kd_old_classes``.
+        This prevents the teacher's meaningless predictions on new-class
+        samples from interfering with CE-driven learning.
+        """
+        # Per-sample masking: only distill on old-class (replay) samples.
+        if self.kd_replay_only and y is not None and self.kd_old_classes is not None:
+            old_set = set(self.kd_old_classes)
+            mask = torch.tensor(
+                [yi.item() in old_set for yi in y],
+                dtype=torch.bool, device=y.device,
+            )
+            if mask.sum() == 0:
+                return torch.tensor(0.0, device=student_logits.device)
+            student_logits = student_logits[mask]
+            x = x[mask]
+
+        with torch.no_grad():
+            teacher_logits = self.teacher_model(x)
+        T = self.kd_temperature
+        if self.kd_old_classes is not None:
+            idx = self.kd_old_classes
+            s = student_logits[:, idx]
+            t = teacher_logits[:, idx]
+        else:
+            s = student_logits
+            t = teacher_logits
+        return F.kl_div(
+            F.log_softmax(s / T, dim=1),
+            F.softmax(t / T, dim=1),
+            reduction="batchmean",
+        ) * (T * T)
+
     def _prepare_input(self, batch: dict[str, Any]) -> torch.Tensor:
         return prepare_input(
             batch,
@@ -336,6 +400,14 @@ class Trainer:
 
                 if use_proto_loss:
                     loss = loss + self.prototype.alignment_loss(feat, y)
+
+            # Knowledge distillation (LwF): KL-div between student and teacher.
+            if self.teacher_model is not None and not use_nested_teach:
+                kd_loss = self._compute_kd_loss(logits, x, y)
+                if self.kd_lambda > 0:
+                    loss = loss + self.kd_lambda * kd_loss
+                else:
+                    loss = self.kd_alpha * loss + (1.0 - self.kd_alpha) * kd_loss
 
             # nested_teach_step already did zero_grad / backward / step.
             if not use_nested_teach:
@@ -399,6 +471,15 @@ class Trainer:
         self.optimizer.zero_grad()
         logits_full = self.model(x)
         loss_full = self.criterion(logits_full, y)
+
+        # Knowledge distillation in nested-teach path.
+        if self.teacher_model is not None:
+            kd_loss = self._compute_kd_loss(logits_full, x, y)
+            if self.kd_lambda > 0:
+                loss_full = loss_full + self.kd_lambda * kd_loss
+            else:
+                loss_full = self.kd_alpha * loss_full + (1.0 - self.kd_alpha) * kd_loss
+
         loss_full.backward()
         if self.grad_clip > 0:
             nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)

@@ -1,0 +1,45 @@
+# v5_final_b: Masked KD (alpha=0.5, stronger) + NO WA + 15 epochs
+#
+# v5_final (alpha=0.7) showed that mild KD is insufficient for 15 epochs:
+# the model had enough steps to overwrite old class boundaries.
+#
+# v5e had alpha=0.5 but WA overcorrected. Without WA, alpha=0.5 should
+# provide the right balance: strong enough KD for 15 epochs, no overcorrection.
+
+_base_:
+  - ../../base/wm811k_classifier.yaml
+  - ../models/nested_selfmod.yaml
+  - ../recipes/nested_continual.yaml
+
+task_mode: multiclass
+
+train:
+  epochs: 15
+  lr: 5.0e-4
+  weight_decay: 1.0e-3
+  grad_clip: 1.0
+
+continual:
+  num_tasks: 3
+  classes_per_task: 3
+  eval_after_each_task: true
+  freeze_slow_cms: false
+  class_weight_per_task: true
+  class_weight_mode: sqrt_inv_freq
+  balanced_sampling: false
+  max_samples_per_class: 5000
+  epochs_per_task: [15, 15, 15]
+  load_best_final: false
+  task_order:
+    - [1, 2, 3]     # Center, Donut, Edge-Loc
+    - [4, 5, 6]     # Edge-Ring, Loc, Near-full
+    - [7, 8, 0]     # Random, Scratch, none
+
+  replay:
+    enabled: true
+    exemplars_per_class: 1000
+
+  knowledge_distillation:
+    enabled: true
+    alpha: 0.5
+    temperature: 2.0

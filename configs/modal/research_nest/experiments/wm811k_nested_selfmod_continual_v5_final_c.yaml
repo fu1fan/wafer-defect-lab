@@ -1,0 +1,49 @@
+# v5_final_c: Additive Masked KD (lambda=1.0) + 15 epochs
+#
+# Key insight from v5_final and v5_final_b: weighted-average KD (alpha*CE + (1-alpha)*KD)
+# weakens the CE signal, hurting replay-driven old-class learning.
+#
+# Standard LwF formulation uses ADDITIVE loss: CE + lambda * KD_masked
+# This keeps CE at full strength for both new-class learning and replay,
+# while the KD penalty preserves old decision boundaries.
+#
+# lambda=1.0: equal KD and CE contribution (CE is ~0.2-0.5, KD similar magnitude)
+# No WA, no best.pt loading.
+
+_base_:
+  - ../../base/wm811k_classifier.yaml
+  - ../models/nested_selfmod.yaml
+  - ../recipes/nested_continual.yaml
+
+task_mode: multiclass
+
+train:
+  epochs: 15
+  lr: 5.0e-4
+  weight_decay: 1.0e-3
+  grad_clip: 1.0
+
+continual:
+  num_tasks: 3
+  classes_per_task: 3
+  eval_after_each_task: true
+  freeze_slow_cms: false
+  class_weight_per_task: true
+  class_weight_mode: sqrt_inv_freq
+  balanced_sampling: false
+  max_samples_per_class: 5000
+  epochs_per_task: [15, 15, 15]
+  load_best_final: false
+  task_order:
+    - [1, 2, 3]     # Center, Donut, Edge-Loc
+    - [4, 5, 6]     # Edge-Ring, Loc, Near-full
+    - [7, 8, 0]     # Random, Scratch, none
+
+  replay:
+    enabled: true
+    exemplars_per_class: 1000
+
+  knowledge_distillation:
+    enabled: true
+    lambda: 1.0
+    temperature: 2.0

@@ -1,0 +1,53 @@
+# v5c: v4 + LwF KD + Cosine Classifier (LUCIR-inspired)
+#
+# Literature: LUCIR (Hou et al. 2019), iCaRL (Rebuffi et al. 2017)
+#
+# Hypothesis: besides decision boundary drift, the FC head weight magnitudes
+# are biased toward recent classes. A cosine-normalized classifier removes
+# magnitude dependence entirely: logit = eta * cos(w_c, f). Combined with
+# KD, this should stabilize both the feature space and the classifier.
+#
+# KD: alpha=0.5, T=2.0
+# Cosine: eta=10.0 (learnable-scale cosine head)
+# WA: NOT needed when using cosine normalization
+
+_base_:
+  - ../../base/wm811k_classifier.yaml
+  - ../models/nested_selfmod.yaml
+  - ../recipes/nested_continual.yaml
+
+task_mode: multiclass
+
+train:
+  epochs: 5
+  lr: 5.0e-4
+  weight_decay: 1.0e-3
+  grad_clip: 1.0
+
+continual:
+  num_tasks: 3
+  classes_per_task: 3
+  eval_after_each_task: true
+  freeze_slow_cms: false
+  class_weight_per_task: true
+  class_weight_mode: sqrt_inv_freq
+  balanced_sampling: false
+  max_samples_per_class: 5000
+  epochs_per_task: [5, 5, 5]
+  task_order:
+    - [1, 2, 3]     # Center, Donut, Edge-Loc
+    - [4, 5, 6]     # Edge-Ring, Loc, Near-full
+    - [7, 8, 0]     # Random, Scratch, none
+
+  replay:
+    enabled: true
+    exemplars_per_class: 1000
+
+  knowledge_distillation:
+    enabled: true
+    alpha: 0.5
+    temperature: 2.0
+
+  cosine_classifier:
+    enabled: true
+    eta: 10.0
