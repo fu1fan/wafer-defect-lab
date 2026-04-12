@@ -1,0 +1,32 @@
+# Auto-generated search config: B1_r0_ref
+_base_:
+  - ../../../base/wm811k_classifier.yaml
+  - ../../models/resnet50.yaml
+
+task_mode: multiclass
+
+model:
+  arch: resnet50
+  in_channels: 1
+  pretrained: false
+  dropout: 0.2
+
+train:
+  epochs: 15
+  lr: 0.001
+  weight_decay: 0.001
+  grad_clip: 1.0
+  loss_type: focal
+  focal_gamma: 2.0
+  optimizer: adamw
+  scheduler: cosine
+
+data:
+  sampler: class_balanced
+  batch_size: 64
+  augment:
+    random_flip: true
+    random_rotate90: true
+    random_translate_frac: 0.08
+    random_scale_min: 0.95
+    random_scale_max: 1.05

@@ -1,0 +1,5 @@
+model:
+  arch: resnet50_gem
+  in_channels: 1
+  pretrained: false
+  dropout: 0.2
