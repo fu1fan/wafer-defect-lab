@@ -1,0 +1,5 @@
+model:
+  arch: efficientnetv2_s_wafer
+  in_channels: 1
+  pretrained: false
+  dropout: 0.2

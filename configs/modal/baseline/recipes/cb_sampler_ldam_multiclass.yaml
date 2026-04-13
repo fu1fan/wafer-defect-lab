@@ -1,0 +1,13 @@
+# Class-Balanced Sampler + LDAM Loss for multiclass.
+# LDAM enforces larger margins for minority classes, making the decision
+# boundary more favorable for under-represented classes.
+train:
+  weight_decay: 1.0e-3
+  grad_clip: 1.0
+  loss_type: ldam
+  class_counts: [36730, 3462, 409, 2417, 8554, 1620, 54, 609, 500]
+  ldam_max_margin: 0.5
+  ldam_scale: 30.0
+
+data:
+  sampler: class_balanced

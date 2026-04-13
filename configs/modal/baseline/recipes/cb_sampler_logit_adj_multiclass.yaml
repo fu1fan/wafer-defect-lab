@@ -1,0 +1,12 @@
+# Class-Balanced Sampler + Logit Adjustment Loss for multiclass.
+# Logit Adjustment subtracts tau * log(class_prior) from logits before CE,
+# providing Bayes-optimal correction for long-tailed distributions.
+train:
+  weight_decay: 1.0e-3
+  grad_clip: 1.0
+  loss_type: logit_adjustment
+  class_counts: [36730, 3462, 409, 2417, 8554, 1620, 54, 609, 500]
+  la_tau: 1.0
+
+data:
+  sampler: class_balanced

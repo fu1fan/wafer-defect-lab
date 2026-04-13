@@ -1,0 +1,20 @@
+# E4: EfficientNetV2-S + CB sampler + Balanced Softmax
+# Test if Balanced Softmax outperforms focal on EfficientNetV2 backbone
+_base_:
+  - ../../../base/wm811k_classifier.yaml
+  - ../../models/efficientnetv2_s.yaml
+  - ../../recipes/cb_sampler_balanced_softmax_multiclass.yaml
+
+task_mode: multiclass
+
+train:
+  epochs: 5
+  lr: 5.0e-4
+
+data:
+  augment:
+    random_flip: true
+    random_rotate90: true
+    random_translate_frac: 0.08
+    random_scale_min: 0.95
+    random_scale_max: 1.05

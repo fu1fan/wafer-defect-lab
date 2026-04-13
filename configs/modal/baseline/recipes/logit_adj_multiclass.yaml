@@ -1,0 +1,8 @@
+# Logit Adjustment without CB sampler for multiclass.
+# Pure loss-based re-balancing using class priors, no data-level resampling.
+train:
+  weight_decay: 1.0e-3
+  grad_clip: 1.0
+  loss_type: logit_adjustment
+  class_counts: [36730, 3462, 409, 2417, 8554, 1620, 54, 609, 500]
+  la_tau: 1.0

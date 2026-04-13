@@ -81,7 +81,7 @@ class Trainer:
         }
         self.scheduler = SCHEDULER_REGISTRY.build(scheduler_name, sched_cfg)
 
-        # Loss function: CE (default), Focal, BalancedSoftmax, or LogitAdjusted.
+        # Loss function: CE (default), Focal, BalancedSoftmax, LogitAdjusted, or LDAM.
         loss_type = str(config.get("loss_type", "ce")).lower()
         class_weights = config.get("class_weights")
         class_counts = config.get("class_counts")
@@ -104,6 +104,17 @@ class Trainer:
                 raise ValueError("logit_adjustment loss requires 'class_counts'")
             la_tau = float(config.get("la_tau", 1.0))
             self.criterion = LogitAdjustedLoss(class_counts, tau=la_tau)
+        elif loss_type == "ldam":
+            from .losses import LDAMLoss
+            if class_counts is None:
+                raise ValueError("ldam loss requires 'class_counts'")
+            ldam_max_margin = float(config.get("ldam_max_margin", 0.5))
+            ldam_scale = float(config.get("ldam_scale", 30.0))
+            self.criterion = LDAMLoss(
+                class_counts,
+                max_margin=ldam_max_margin,
+                scale=ldam_scale,
+            )
         else:
             if class_weights is not None:
                 w = torch.tensor(class_weights, dtype=torch.float32, device=self.device)

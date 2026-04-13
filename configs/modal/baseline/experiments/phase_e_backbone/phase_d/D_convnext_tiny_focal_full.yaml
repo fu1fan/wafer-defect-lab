@@ -1,0 +1,22 @@
+# Phase D: ConvNeXt-Tiny + CB sampler + focal (γ=1.5) — full 25-epoch training
+# Top-1 from Phase C screening (score=0.7170 at 5 epochs)
+# Same recipe as D1_gem_tuned (best ResNet50), but with ConvNeXt-Tiny backbone
+_base_:
+  - ../../../../base/wm811k_classifier.yaml
+  - ../../../models/convnext_tiny.yaml
+  - ../../../recipes/cb_sampler_focal_multiclass.yaml
+
+task_mode: multiclass
+
+train:
+  epochs: 25
+  lr: 5.0e-4
+  focal_gamma: 1.5
+
+data:
+  augment:
+    random_flip: true
+    random_rotate90: true
+    random_translate_frac: 0.08
+    random_scale_min: 0.95
+    random_scale_max: 1.05

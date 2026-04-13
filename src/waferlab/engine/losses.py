@@ -126,3 +126,48 @@ class LogitAdjustedLoss(nn.Module):
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         adjusted = logits - self.tau * self.log_prior.to(logits.device)
         return F.cross_entropy(adjusted, targets)
+
+
+class LDAMLoss(nn.Module):
+    """Label-Distribution-Aware Margin Loss (Cao et al., NIPS 2019).
+
+    Enforces larger classification margins for minority classes, making
+    the decision boundary more favorable for under-represented classes.
+
+    .. math::
+        \\Delta_j = C / n_j^{1/4}
+
+    where *C* is a scaling constant and *n_j* is the sample count for
+    class *j*.  The margin is subtracted from the true-class logit
+    before computing cross-entropy.
+
+    Parameters
+    ----------
+    class_counts : list[float]
+        Per-class sample counts.
+    max_margin : float
+        Maximum margin magnitude (applied to the rarest class).
+    scale : float
+        Logit scaling factor *s* (controls sharpness after margin).
+    """
+
+    def __init__(
+        self,
+        class_counts: list[float],
+        max_margin: float = 0.5,
+        scale: float = 30.0,
+    ) -> None:
+        super().__init__()
+        counts = torch.tensor(class_counts, dtype=torch.float32)
+        # Per-class margin: Δ_j = C / n_j^(1/4), normalised so max = max_margin
+        margins = 1.0 / torch.sqrt(torch.sqrt(counts.clamp(min=1.0)))
+        margins = margins * (max_margin / margins.max())
+        self.register_buffer("margins", margins)
+        self.scale = scale
+
+    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        # Subtract margin only from the true-class logit
+        margins_batch = self.margins.to(logits.device)[targets]  # [B]
+        one_hot = F.one_hot(targets, num_classes=logits.size(1)).float()
+        adjusted = logits - one_hot * margins_batch.unsqueeze(1)
+        return F.cross_entropy(self.scale * adjusted, targets)

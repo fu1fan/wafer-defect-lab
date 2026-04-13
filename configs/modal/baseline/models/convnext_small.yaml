@@ -1,0 +1,5 @@
+model:
+  arch: convnext_small_wafer
+  in_channels: 1
+  pretrained: false
+  dropout: 0.2

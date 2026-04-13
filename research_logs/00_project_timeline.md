@@ -53,6 +53,21 @@
   - `minority_recall_mean=0.7975`
   - `score=0.8017`
 
+### 2026-04-13：更强 Backbone 搜索（ConvNeXt / EfficientNetV2）
+
+- 线程：`research_logs/strong_backbone_search/`
+- 目标：寻找比 ResNet50+GeM 更强的静态基线 backbone
+- 经过完整 4 阶段实验（调研 → 接入 → 筛选 → 完整训练）
+- 候选 backbone：ConvNeXt-Tiny (ImageNet 82.5%)、EfficientNetV2-S (ImageNet 84.2%)、ConvNeXt-Small
+- 中小规模筛选（5 epochs, 7 组实验）确认：
+  - CB sampler 是必须项；focal loss 是最佳损失函数
+  - 损失层类频率校正 + CB sampler = 双重过校正
+- 完整训练（25 epochs）结果：
+  - ConvNeXt-Tiny：score=0.8014（与基线 0.8017 持平）
+  - EfficientNetV2-S：score=0.8017（与基线持平）
+- **结论：不建议替换 ResNet50+GeM 基线。** 更强的 ImageNet 预训练不能转化为 WM-811K 上的优势，性能瓶颈不在 backbone。
+- 工程产出：新增 3 个 backbone 模型、LDAM 损失、12 个实验配置
+
 ## 当前状态
 
 - 工程上已经具备较完整的配置化实验框架、注册表机制和可扩展训练入口。
@@ -60,4 +75,6 @@
   - 二分类下，结构与 loss 联合优化是有效的。
   - 多分类下，长尾问题不能只靠 ResNet18 的轻量修补解决。
   - Nested Learning 提供了值得保留的结构思路，但当前还需要更强 backbone 才能支撑。
-- 当前最优主线是 `resnet50_multiclass`，后续优先方向应放在更细粒度的 loss / sampling 微调，而不是继续叠更重的注意力模块。
+  - **更强的 backbone（ConvNeXt, EfficientNetV2）不能进一步提升 WM-811K 性能，瓶颈在数据不平衡而非表征能力。**
+- 当前最优主线仍然是 `resnet50_multiclass` 的 `D1_gem_tuned`（score=0.8017）。
+- 后续优先方向应放在数据层面增强、训练策略调整（两阶段训练、logit 校准），以及在持续学习框架下的探索。

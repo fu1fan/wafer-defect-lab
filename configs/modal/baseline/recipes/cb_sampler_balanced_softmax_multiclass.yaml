@@ -1,0 +1,11 @@
+# Class-Balanced Sampler + Balanced Softmax Loss for multiclass.
+# Balanced Softmax adjusts logits by log(class_prior) to compensate
+# for frequency imbalance at training time.
+train:
+  weight_decay: 1.0e-3
+  grad_clip: 1.0
+  loss_type: balanced_softmax
+  class_counts: [36730, 3462, 409, 2417, 8554, 1620, 54, 609, 500]
+
+data:
+  sampler: class_balanced
