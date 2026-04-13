@@ -24,31 +24,51 @@ import torch
 
 from waferlab.config import load_yaml_config
 from waferlab.data.dataloaders import build_eval_dataloader
+from waferlab.engine.evaluator import evaluate
+from waferlab.metrics.classification import compute_metrics, format_metrics
 from waferlab.models.resnet import FAILURE_TYPE_NAMES, FAILURE_TYPE_TO_IDX
 from waferlab.registry import MODEL_REGISTRY
 from waferlab.runtime import load_run_summary, resolve_device, resolve_processed_root
-from waferlab.engine.evaluator import evaluate
-from waferlab.metrics.classification import compute_metrics, format_metrics
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Evaluate wafer-level classifier")
     p.add_argument(
-        "--run-summary", type=Path, default=None,
+        "--run-summary",
+        type=Path,
+        default=None,
         help="Path to run_summary.json produced by train_classifier.py. "
-             "When provided, checkpoint / config / task-mode / output-dir "
-             "are read from it automatically (CLI flags still override).",
+        "When provided, checkpoint / config / task-mode / output-dir "
+        "are read from it automatically (CLI flags still override).",
     )
-    p.add_argument("--checkpoint", type=Path, default=None,
-                   help="Path to .pt checkpoint (overrides run-summary)")
-    p.add_argument("--config", type=Path, default=None,
-                   help="Training config YAML (only needed without --run-summary)")
+    p.add_argument(
+        "--checkpoint",
+        type=Path,
+        default=None,
+        help="Path to .pt checkpoint (overrides run-summary)",
+    )
+    p.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Training config YAML (only needed without --run-summary)",
+    )
     p.add_argument("--task-mode", choices=["binary", "multiclass"], default=None)
     p.add_argument("--device", type=str, default="auto")
-    p.add_argument("--output-dir", type=Path, default=None,
-                   help="Where to save evaluation results (default: checkpoint dir)")
-    p.add_argument("--split", choices=["Training", "Test", "all"], default="Test",
-                   help="Which split_label to evaluate on")
+    p.add_argument(
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="Where to save evaluation results (default: checkpoint dir)",
+    )
+    p.add_argument(
+        "--split",
+        choices=["Training", "Test", "all"],
+        default="Test",
+        help="Which split_label to evaluate on",
+    )
     return p.parse_args()
 
 
@@ -67,9 +87,7 @@ def main() -> int:
         if ckpt_best is not None:
             checkpoint = Path(ckpt_best)
     if checkpoint is None:
-        raise SystemExit(
-            "Error: --checkpoint is required (or provide --run-summary)."
-        )
+        raise SystemExit("Error: --checkpoint is required (or provide --run-summary).")
 
     # Task mode
     task_mode = args.task_mode
@@ -97,7 +115,12 @@ def main() -> int:
     else:
         config_path = (
             args.config
-            or PROJECT_ROOT / "configs" / "modal" / "baseline" / "experiments" / "wm811k_resnet18_baseline.yaml"
+            or PROJECT_ROOT
+            / "configs"
+            / "modal"
+            / "baseline"
+            / "experiments"
+            / "wm811k_resnet18_baseline.yaml"
         )
         config = load_yaml_config(config_path)
         model_cfg = config.get("model", {})
@@ -138,21 +161,23 @@ def main() -> int:
     # Build eval dataloader.
     processed_root = resolve_processed_root(PROJECT_ROOT)
     eval_loader = build_eval_dataloader(
-        config, processed_root=processed_root, split=args.split,
+        config,
+        processed_root=processed_root,
+        split=args.split,
     )
     print(f"Eval samples: {len(eval_loader.dataset)}  (split={args.split})")
 
     # Run evaluation.
     results = evaluate(model, eval_loader, device=device, task_mode=task_mode)
-    metrics = compute_metrics(results["y_true"], results["y_pred"], class_names=class_names)
+    metrics = compute_metrics(
+        results["y_true"], results["y_pred"], class_names=class_names
+    )
 
     print("\n" + format_metrics(metrics))
     print()
 
     # Save results.
-    save_metrics = {
-        k: v for k, v in metrics.items() if k != "confusion_matrix"
-    }
+    save_metrics = {k: v for k, v in metrics.items() if k != "confusion_matrix"}
     save_metrics["confusion_matrix"] = metrics["confusion_matrix"].tolist()
     metrics_path = output_dir / f"eval_metrics_{args.split}.json"
     with metrics_path.open("w", encoding="utf-8") as f:
