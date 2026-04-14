@@ -103,6 +103,19 @@
 - **新主线：G2_gamma1.0 + LogitAdj(τ=-0.05)，score=0.8213**
 - 工程产出：`scripts/crt_sweep.py`、7 个 cRT checkpoint、完整 sweep 结果
 
+### 2026-04-14 ~ 2026-04-15：Loc/Edge-Loc Recall 改进（Phase H）
+
+- 线程：`research_logs/resnet50_multiclass/phase_h_loc_improvement.md`
+- 目标：在不损害综合 score 的前提下恢复 Loc recall（0.636，比 D1 降 0.057）
+- 误差分析发现：Loc 错误是**弥散型**（散布到 5+ 个类），57% 为深度错误（margin<-2）
+- H1（类别偏置后处理）：score=0.8238，Loc↑0.094 但 Edge-Loc↓0.067，非干净胜利
+- H2（加权 focal cRT）：stacked=0.8130，低于基线 ✗
+- H3（部分解冻 layer4）：stacked=0.8175，第 1 epoch 最优后过拟合 ✗
+- H4（两阶段 cRT）：stacked=0.8134，Loc=0.713 最佳但综合代价过高 ✗
+- H5（DE 优化偏置叠加）：最高 0.8252（H2+bias），但存在测试集过拟合风险
+- **关键结论：Loc 与 Edge-Loc 在特征空间中存在根本性 tradeoff，无法同时改善**
+- **主线不变更：G2_gamma1.0 + LogitAdj(τ=-0.05) 仍为最优方案**
+
 ## 当前状态
 
 - 工程上已经具备较完整的配置化实验框架、注册表机制和可扩展训练入口。
@@ -113,4 +126,5 @@
   - **更强的 backbone（ConvNeXt, EfficientNetV2）不能进一步提升 WM-811K 性能，瓶颈在数据不平衡而非表征能力。**
   - **后校准方法在当前设置下无效，但 cRT + logit adjustment 可以 stacking。**
 - 当前最优主线是 `resnet50_multiclass` 的 `G2_gamma1.0_logitadj`（score=0.8213）。
-- 后续优先方向：Loc 类 recall 恢复、class-wise threshold tuning、持续学习框架下的探索。
+- Loc/Edge-Loc recall 改进已探索多个方向，均未超越基线（Phase H 负结果）。
+- 后续优先方向：数据层面改进（Loc 样本增强/清洗）、类别合并探索、持续学习框架下的探索。

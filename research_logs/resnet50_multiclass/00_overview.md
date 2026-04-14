@@ -29,6 +29,7 @@
 4. Phase D：最佳超参与最佳结构组合定版（原主线 score=0.8017）
 5. Phase F：后校准与解耦重平衡（score=0.8113）
 6. Phase G：cRT 超参数搜索与交叉验证（新主线 score=0.8213，+0.0196）
+7. Phase H：Loc/Edge-Loc recall 改进（负结果，主线不变更）
 
 ## 当前结论
 
@@ -41,9 +42,11 @@
 - 最终最优方案 score=0.8213（+0.0196），改进主要来自 Center/Edge-Ring/Scratch 的 recall 大幅提升。
 - accuracy 从 0.9541 提升至 0.9591，macro_recall 从 0.7988 提升至 0.8401。
 - 代价：Loc (-0.057)、Edge-Loc (-0.045)、Donut (-0.027) 三个类有轻微 recall 回退。
+- **Loc/Edge-Loc 存在根本性 tradeoff**：在当前特征空间中共享决策边界，无法同时改善（Phase H 结论）。
+- 加权 focal、部分解冻 backbone、两阶段 cRT 均无法超越 G2（Phase H 负结果）。
 
 ## 下一步计划
 
-- Loc 类 recall 恢复（当前 0.636，从 0.693 下降）是最大的改进空间
-- 可考虑 class-wise threshold tuning 或 Loc-specific 数据增强
-- 进一步探索是否可在 cRT 阶段使用 mixed precision 或更长训练
+- 当前方案已接近 head-only 与后处理的帕累托最优
+- Loc 弥散型错误需要数据层面（增强/清洗）或任务层面（类别合并）的改变
+- 可考虑从数据质量方向探索，而非继续调整训练策略
