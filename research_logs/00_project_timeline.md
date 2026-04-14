@@ -68,6 +68,41 @@
 - **结论：不建议替换 ResNet50+GeM 基线。** 更强的 ImageNet 预训练不能转化为 WM-811K 上的优势，性能瓶颈不在 backbone。
 - 工程产出：新增 3 个 backbone 模型、LDAM 损失、12 个实验配置
 
+### 2026-04-14：后校准与解耦重平衡（Phase F）
+
+- 线程：`research_logs/resnet50_multiclass/phase_f_posthoc_crt.md`
+- 目标：围绕 D1_gem_tuned 从后处理校准和解耦训练两个方向寻找改进
+- Layer 1（后校准）：测试 6 种 post-hoc 方法（temperature scaling / class-wise bias / vector scaling / tau-norm / logit adjustment / threshold tuning），**全部无法超过基线**
+  - Temperature scaling 对 argmax 恒等，tau-normalization 破坏权重结构
+  - 唯一接近的 logit adjustment（tau=-0.08）也仅 0.8010
+- Layer 2（cRT 解耦重训练）：测试 5 种策略，**找到两个胜出方案**
+  - `crt_balanced_finetune`：**score=0.8099（+0.0082）**
+  - `crt_focal`：score=0.8091（+0.0074）
+  - **`crt_focal + LogitAdj(tau=0.11)`：score=0.8113（+0.0096）**，最终新主线
+  - crt_ce / crt_reset_focal / crt_label_smooth 均被淘汰
+- 关键发现：
+  - 模型特征已经学好，瓶颈在分类头的决策边界
+  - 保留原始 head 权重 + focal loss + CB sampling 是 cRT 成功的关键
+  - 重初始化 head 或使用 label smoothing 均有害
+  - cRT 改变决策边界后，post-hoc logit adjustment 获得了新的作用空间（单独使用无效）
+  - 改进来自全部弱势类的 recall 提升：Center(+0.12), Edge-Ring(+0.16), Loc(+0.05), Scratch(+0.02)
+- 工程产出：`scripts/posthoc_calibration.py`、`scripts/crt_retrain.py`、新 checkpoint
+
+### 2026-04-14：cRT 超参数搜索与交叉验证（Phase G）
+
+- 线程：`research_logs/resnet50_multiclass/phase_g_crt_sweep.md`
+- 目标：系统搜索 cRT 核心超参数（LR + focal gamma），进一步优化 stacked score
+- G1（LR sweep，γ=1.5）：LR=5e-4 最佳，stacked=0.8169
+- G2（Gamma sweep，LR=1e-3）：**γ=1.0 最佳，stacked=0.8213**（+0.0196 vs D1）
+- G3（交叉验证 LR=5e-4 + γ=1.0）：stacked=0.8172，不如 G2_gamma1.0
+- 关键发现：
+  - Focal γ=1.0 是 head-only training 的最优选择（比默认 γ=1.5 更好）
+  - γ=0.5 导致 NaN 崩溃（数值不稳定）
+  - LR 和 gamma 有强交互作用，不能简单取各维度最优
+  - 好的 cRT 配置的最优 logit adj tau 很小（-0.05 ~ -0.10）
+- **新主线：G2_gamma1.0 + LogitAdj(τ=-0.05)，score=0.8213**
+- 工程产出：`scripts/crt_sweep.py`、7 个 cRT checkpoint、完整 sweep 结果
+
 ## 当前状态
 
 - 工程上已经具备较完整的配置化实验框架、注册表机制和可扩展训练入口。
@@ -76,5 +111,6 @@
   - 多分类下，长尾问题不能只靠 ResNet18 的轻量修补解决。
   - Nested Learning 提供了值得保留的结构思路，但当前还需要更强 backbone 才能支撑。
   - **更强的 backbone（ConvNeXt, EfficientNetV2）不能进一步提升 WM-811K 性能，瓶颈在数据不平衡而非表征能力。**
-- 当前最优主线仍然是 `resnet50_multiclass` 的 `D1_gem_tuned`（score=0.8017）。
-- 后续优先方向应放在数据层面增强、训练策略调整（两阶段训练、logit 校准），以及在持续学习框架下的探索。
+  - **后校准方法在当前设置下无效，但 cRT + logit adjustment 可以 stacking。**
+- 当前最优主线是 `resnet50_multiclass` 的 `G2_gamma1.0_logitadj`（score=0.8213）。
+- 后续优先方向：Loc 类 recall 恢复、class-wise threshold tuning、持续学习框架下的探索。
