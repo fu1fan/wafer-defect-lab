@@ -1,0 +1,7 @@
+# DeiT III-S/16 (IN22K→IN1K, 21.7M params, pure ViT, patch16)
+model:
+  arch: deit3_small_wafer
+  in_channels: 1
+  pretrained: true
+  dropout: 0.2
+  drop_path_rate: 0.1

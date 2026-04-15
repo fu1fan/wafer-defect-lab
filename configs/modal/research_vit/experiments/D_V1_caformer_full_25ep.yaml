@@ -1,0 +1,28 @@
+# Phase D: Full 25-epoch training with best Phase C config (C1)
+# CAFormer-S18, lr=1e-4, cosine warmup, CB sampler + focal
+_base_:
+  - ../../base/wm811k_classifier.yaml
+  - ../recipes/cb_focal_vit.yaml
+
+task_mode: multiclass
+
+model:
+  arch: caformer_s18_wafer
+  in_channels: 1
+  pretrained: true
+  dropout: 0.3
+
+train:
+  epochs: 25
+  lr: 1.0e-4
+  scheduler: cosine_warmup
+  scheduler_args:
+    warmup_epochs: 2
+
+data:
+  augment:
+    random_flip: true
+    random_rotate90: true
+    random_translate_frac: 0.08
+    random_scale_min: 0.95
+    random_scale_max: 1.05

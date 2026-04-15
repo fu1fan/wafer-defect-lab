@@ -137,6 +137,29 @@ def _build_step(config: dict[str, Any]):
     )
 
 
+@SCHEDULER_REGISTRY.register("cosine_warmup")
+def _build_cosine_warmup(config: dict[str, Any]):
+    """Cosine annealing with linear warmup (standard for ViT training)."""
+    from torch.optim.lr_scheduler import (
+        CosineAnnealingLR, LinearLR, SequentialLR,
+    )
+    optimizer = config["optimizer"]
+    epochs = int(config.get("epochs", 30))
+    warmup_epochs = int(config.get("warmup_epochs", 3))
+    warmup_epochs = min(warmup_epochs, max(epochs - 1, 1))
+    warmup = LinearLR(
+        optimizer, start_factor=0.01, end_factor=1.0,
+        total_iters=warmup_epochs,
+    )
+    cosine = CosineAnnealingLR(
+        optimizer, T_max=max(epochs - warmup_epochs, 1),
+    )
+    return SequentialLR(
+        optimizer, schedulers=[warmup, cosine],
+        milestones=[warmup_epochs],
+    )
+
+
 @SCHEDULER_REGISTRY.register("none")
 def _build_none(config: dict[str, Any]):
     """No-op scheduler (constant LR)."""

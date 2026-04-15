@@ -132,6 +132,34 @@ python scripts/train_classifier.py --smoke-test
 python scripts/eval_classifier.py --checkpoint outputs/wm811k_resnet_baseline/best.pt
 ```
 
+### 一键导出报告
+
+```bash
+conda activate torch
+pip install -r requirements.txt
+python scripts/export_report.py --run-summary outputs/<run>/run_summary.json
+```
+
+默认会导出到 `reports/YYYY-MM-DD/<model_run_name>/`，内容包括：
+- `summary.md`
+- `metrics.json`
+- `training_curves.png`
+- `confusion_matrix.png`
+- `confusion_matrix_counts.{json,csv}`
+- `confusion_matrix_normalized.{json,csv}`
+- `tsne.png`
+- `metadata.json`
+
+也支持只给 checkpoint 的回退模式：
+
+```bash
+conda activate torch
+python scripts/export_report.py \
+  --checkpoint outputs/<run>/best.pt \
+  --config configs/modal/baseline/experiments/<exp>.yaml \
+  --task-mode multiclass
+```
+
 ### GradCAM 热力图
 
 ```bash

@@ -1,0 +1,19 @@
+# Phase B: DeiT III-S/16 screening (8 epochs, CB sampler + focal)
+_base_:
+  - ../../base/wm811k_classifier.yaml
+  - ../models/deit3_small.yaml
+  - ../recipes/cb_focal_vit.yaml
+
+task_mode: multiclass
+
+train:
+  epochs: 8
+  lr: 5.0e-4
+
+data:
+  augment:
+    random_flip: true
+    random_rotate90: true
+    random_translate_frac: 0.08
+    random_scale_min: 0.95
+    random_scale_max: 1.05

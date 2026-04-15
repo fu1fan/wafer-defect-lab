@@ -5,3 +5,5 @@ h5py
 pyarrow
 PyYAML
 matplotlib
+timm
+scikit-learn

@@ -218,6 +218,10 @@ __marimo__/
 # MacOS
 *.DS_Store
 
+# Local exported reports
+reports/*
+!reports/.gitkeep
+
 # IDE
 .codex
 .vscode/settings.json

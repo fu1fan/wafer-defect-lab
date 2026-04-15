@@ -1,0 +1,7 @@
+# EVA-02-S/14 (MIM IN22K, 21.6M params, pure ViT, patch14)
+model:
+  arch: eva02_small_wafer
+  in_channels: 1
+  pretrained: true
+  dropout: 0.2
+  drop_path_rate: 0.1

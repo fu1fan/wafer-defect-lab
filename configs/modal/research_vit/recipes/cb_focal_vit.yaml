@@ -1,0 +1,10 @@
+# CB sampler + focal loss for ViT multiclass screening.
+# Same recipe as baseline but with tuned hyperparams from ResNet50 Phase D.
+train:
+  weight_decay: 1.0e-3
+  grad_clip: 1.0
+  loss_type: focal
+  focal_gamma: 1.5
+
+data:
+  sampler: class_balanced

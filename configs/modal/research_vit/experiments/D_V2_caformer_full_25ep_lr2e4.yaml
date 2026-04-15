@@ -1,0 +1,28 @@
+# Phase D variant 2: CAFormer-S18 with slightly higher LR (2e-4)
+# Tests whether faster initial convergence helps with 25 epochs
+_base_:
+  - ../../base/wm811k_classifier.yaml
+  - ../recipes/cb_focal_vit.yaml
+
+task_mode: multiclass
+
+model:
+  arch: caformer_s18_wafer
+  in_channels: 1
+  pretrained: true
+  dropout: 0.3
+
+train:
+  epochs: 25
+  lr: 2.0e-4
+  scheduler: cosine_warmup
+  scheduler_args:
+    warmup_epochs: 2
+
+data:
+  augment:
+    random_flip: true
+    random_rotate90: true
+    random_translate_frac: 0.08
+    random_scale_min: 0.95
+    random_scale_max: 1.05

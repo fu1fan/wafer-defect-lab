@@ -1,0 +1,7 @@
+# CAFormer-S18 (MetaFormer conv+attn hybrid, 23.2M params)
+model:
+  arch: caformer_s18_wafer
+  in_channels: 1
+  pretrained: true
+  dropout: 0.2
+  drop_path_rate: 0.1
