@@ -1,0 +1,26 @@
+# CAFormer-S18 spatial tokens + HOPE SelfMod/CMS.
+model:
+  arch: caformer_hope_token
+  base_arch: caformer_s18_wafer
+  token_mode: spatial
+  token_stage: 3          # CAFormer final 7x7 feature grid -> 49 tokens
+  in_channels: 1
+  pretrained: true
+  token_dim: 256
+  num_hope_blocks: 2
+  cms_hidden_multiplier: 4
+  cms_use_layernorm: true
+  self_mod_lr: 1.0e-3
+  selfmod_local_conv_window: 4
+  selfmod_adaptive_q: false
+  selfmod_use_skip: true
+  cms_chunk_reduction: sum
+  cms_flush_partial_at_end: false
+  surprise_threshold: null
+  dropout: 0.1
+  drop_path_rate: 0.1
+  cms_levels:
+    - name: cms_fast
+      update_period: 1
+    - name: cms_slow
+      update_period: 4

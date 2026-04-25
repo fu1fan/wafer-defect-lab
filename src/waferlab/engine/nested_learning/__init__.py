@@ -12,6 +12,7 @@ framework, adapted for 2D wafer-map image classification:
 
 from .levels import LevelSpec, LevelClock
 from .cms import CMSBlock, CMS
+from .hope_blocks import HOPESelfModBlock, HOPESelfModBlockConfig
 from .self_modifier import SelfModifier
 from .nested_block import NestedBlock, NestedBlockConfig
 
@@ -20,6 +21,8 @@ __all__ = [
     "LevelClock",
     "CMSBlock",
     "CMS",
+    "HOPESelfModBlock",
+    "HOPESelfModBlockConfig",
     "SelfModifier",
     "NestedBlock",
     "NestedBlockConfig",

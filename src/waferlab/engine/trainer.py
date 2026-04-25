@@ -468,7 +468,9 @@ class Trainer:
         (NestedCMSResNetClassifier) architectures.
         """
         # Pass 1: Extract pre-nested-block features for teach signal computation.
-        if hasattr(self.model, "patch_embed"):
+        if hasattr(self.model, "forward_tokens"):
+            tokens = self.model.forward_tokens(x)
+        elif hasattr(self.model, "patch_embed"):
             # Token-based model: stem → patch_embed → flatten → tokens.
             feat = self.model.stem(x)
             feat = self.model.patch_embed(feat)
@@ -484,12 +486,16 @@ class Trainer:
         tokens_for_grad = tokens.detach().requires_grad_(True)
 
         # Forward through nested blocks (no teach signal).
-        current = tokens_for_grad
-        for block in self.model.nested_blocks:
-            current = block(current)
-        pooled = current.mean(dim=1)
-        pooled = self.model.norm(pooled)
-        logits = self.model.fc(self.model.drop(pooled))
+        if hasattr(self.model, "forward_from_tokens"):
+            pooled = self.model.forward_from_tokens(tokens_for_grad)
+            logits = self._classify_features(pooled)
+        else:
+            current = tokens_for_grad
+            for block in self.model.nested_blocks:
+                current = block(current)
+            pooled = current.mean(dim=1)
+            pooled = self.model.norm(pooled)
+            logits = self.model.fc(self.model.drop(pooled))
         loss = self.criterion(logits, y)
 
         # Compute teach signal: gradient of loss w.r.t. token features.

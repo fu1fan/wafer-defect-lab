@@ -1,0 +1,51 @@
+# Phase D S1: CAFormer spatial tokens + HOPE, no KD.
+_base_:
+  - ../../base/wm811k_classifier.yaml
+  - ../models/caformer_hope_token.yaml
+  - ../recipes/nested_continual.yaml
+
+task_mode: multiclass
+
+train:
+  epochs: 3
+  lr: 1.0e-4
+  weight_decay: 1.0e-3
+  scheduler: cosine_warmup
+  scheduler_args:
+    warmup_epochs: 1
+  grad_clip: 1.0
+  loss_type: ce
+  nested_teach:
+    enabled: true
+    teach_scale: 1.0
+    warmup_epochs: 1
+
+data:
+  batch_size: 16
+  num_workers: 4
+  augment:
+    random_flip: true
+    random_rotate90: true
+    random_translate_frac: 0.08
+    random_scale_min: 0.95
+    random_scale_max: 1.05
+
+continual:
+  num_tasks: 3
+  classes_per_task: 3
+  freeze_slow_cms: false
+  class_weight_per_task: true
+  class_weight_mode: sqrt_inv_freq
+  balanced_sampling: true
+  max_samples_per_class: 5000
+  epochs_per_task: [3, 3, 3]
+  load_best_final: false
+  task_order:
+    - [1, 2, 3]
+    - [4, 5, 6]
+    - [7, 8, 0]
+  replay:
+    enabled: true
+    exemplars_per_class: 1000
+  knowledge_distillation:
+    enabled: false
