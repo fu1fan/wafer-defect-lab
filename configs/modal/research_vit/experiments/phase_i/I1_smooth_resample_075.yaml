@@ -1,0 +1,24 @@
+# Phase I-ViT I1: CAFormer-S18 + smooth resampling alpha=0.75
+# Mirrors resnet50 Phase I I1 — only sampler_alpha changed from 1.0 to 0.75
+_base_:
+  - ../../../base/wm811k_classifier.yaml
+  - ../../models/caformer_s18.yaml
+  - ../../recipes/cb_focal_vit.yaml
+
+task_mode: multiclass
+
+train:
+  epochs: 10
+  lr: 1.0e-4
+  scheduler: cosine_warmup
+  scheduler_args:
+    warmup_epochs: 2
+
+data:
+  sampler_alpha: 0.75
+  augment:
+    random_flip: true
+    random_rotate90: true
+    random_translate_frac: 0.08
+    random_scale_min: 0.95
+    random_scale_max: 1.05

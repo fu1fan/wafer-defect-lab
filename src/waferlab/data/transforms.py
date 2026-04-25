@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any, Callable, Sequence
 
 import torch
@@ -137,6 +138,144 @@ class WaferAugmentation:
                 fill=0.0,
             )
         return t
+
+
+# ── Wafer-safe Random Erasing ────────────────────────────────────────
+
+class WaferRandomErasing:
+    """Randomly erase a rectangular region of the wafer map.
+
+    Fills the erased region with 0 (background).  Safe for wafer maps because
+    0 is a valid discrete background value, effectively simulating partial
+    observation or occluded regions.
+
+    Parameters
+    ----------
+    p : float
+        Probability of applying erasing per sample.
+    scale_range : tuple[float, float]
+        Range of erased area as a fraction of total image area.
+    ratio_range : tuple[float, float]
+        Range of aspect ratios for the erased rectangle.
+    """
+
+    def __init__(
+        self,
+        p: float = 0.5,
+        scale_range: tuple[float, float] = (0.02, 0.15),
+        ratio_range: tuple[float, float] = (0.3, 3.3),
+    ) -> None:
+        self.p = p
+        self.scale_range = scale_range
+        self.ratio_range = ratio_range
+
+    def __call__(self, sample: dict) -> dict:
+        if torch.rand(1).item() > self.p:
+            return sample
+
+        img = sample["image"]  # [C, H, W]
+        h, w = img.shape[-2:]
+        area = h * w
+
+        for _ in range(10):  # retry until a valid rectangle is found
+            target_area = area * float(
+                torch.empty(1).uniform_(self.scale_range[0], self.scale_range[1]).item()
+            )
+            log_ratio = torch.empty(1).uniform_(
+                math.log(self.ratio_range[0]), math.log(self.ratio_range[1]),
+            )
+            aspect = math.exp(float(log_ratio.item()))
+            eh = int(round(math.sqrt(target_area * aspect)))
+            ew = int(round(math.sqrt(target_area / aspect)))
+            if 0 < eh < h and 0 < ew < w:
+                top = int(torch.randint(0, h - eh, (1,)).item())
+                left = int(torch.randint(0, w - ew, (1,)).item())
+                img[..., top : top + eh, left : left + ew] = 0.0
+                break
+
+        sample["image"] = img
+        return sample
+
+
+# ── Class-aware augmentation ─────────────────────────────────────────
+
+class ClassAwareAugmentation:
+    """Apply stronger augmentation to minority classes.
+
+    Reads ``sample["metadata"]["failure_type"]`` and routes to a *strong*
+    augmentation pipeline for minority classes, or a *normal* pipeline for
+    majority classes.  Minority samples additionally get random erasing.
+
+    Requires ``include_metadata=True`` on the dataset.
+
+    Parameters
+    ----------
+    minority_classes : set[str] or None
+        Class names considered minority.  Defaults to the five weakest
+        WM-811K defect types.
+    random_flip, random_rotate90, random_translate_frac,
+    random_scale_min, random_scale_max :
+        Normal (majority) augmentation parameters.
+    minority_translate_frac : float
+        Translate fraction for minority augmentation (default 0.12).
+    minority_scale_min, minority_scale_max : float
+        Scale jitter range for minority augmentation.
+    minority_erasing_p : float
+        Random-erasing probability for minority samples.
+    """
+
+    _DEFAULT_MINORITY: set[str] = {"Donut", "Near-full", "Random", "Scratch", "Loc"}
+
+    def __init__(
+        self,
+        *,
+        minority_classes: set[str] | None = None,
+        # normal (majority) augmentation params
+        random_flip: bool = True,
+        random_rotate90: bool = True,
+        random_translate_frac: float = 0.0,
+        random_scale_min: float = 1.0,
+        random_scale_max: float = 1.0,
+        # stronger minority augmentation params
+        minority_translate_frac: float = 0.12,
+        minority_scale_min: float = 0.90,
+        minority_scale_max: float = 1.10,
+        minority_erasing_p: float = 0.3,
+    ) -> None:
+        self.minority_classes = minority_classes or self._DEFAULT_MINORITY
+
+        self.normal_aug = WaferAugmentation(
+            random_flip=random_flip,
+            random_rotate90=random_rotate90,
+            random_translate_frac=random_translate_frac,
+            random_scale_min=random_scale_min,
+            random_scale_max=random_scale_max,
+        )
+        self.strong_aug = WaferAugmentation(
+            random_flip=random_flip,
+            random_rotate90=random_rotate90,
+            random_translate_frac=minority_translate_frac,
+            random_scale_min=minority_scale_min,
+            random_scale_max=minority_scale_max,
+        )
+        self.erasing = (
+            WaferRandomErasing(p=minority_erasing_p)
+            if minority_erasing_p > 0
+            else None
+        )
+
+    def __call__(self, sample: dict) -> dict:
+        meta = sample.get("metadata", {})
+        ft = str(meta.get("failure_type", "none"))
+
+        if ft in self.minority_classes:
+            sample = self.strong_aug(sample)
+            if self.erasing is not None:
+                sample = self.erasing(sample)
+        else:
+            sample = self.normal_aug(sample)
+
+        return sample
 
 
 # ── Label injection ──────────────────────────────────────────────────

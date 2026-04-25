@@ -1,0 +1,30 @@
+# Phase I-ViT I3: CAFormer-S18 + smooth resampling alpha=0.75 + class-aware aug
+# Mirrors resnet50 Phase I I3
+_base_:
+  - ../../../base/wm811k_classifier.yaml
+  - ../../models/caformer_s18.yaml
+  - ../../recipes/cb_focal_vit.yaml
+
+task_mode: multiclass
+
+train:
+  epochs: 10
+  lr: 1.0e-4
+  scheduler: cosine_warmup
+  scheduler_args:
+    warmup_epochs: 2
+
+data:
+  sampler_alpha: 0.75
+  augment:
+    random_flip: true
+    random_rotate90: true
+    random_translate_frac: 0.08
+    random_scale_min: 0.95
+    random_scale_max: 1.05
+    class_aware: true
+    minority_classes: ["Donut", "Near-full", "Random", "Scratch", "Loc"]
+    minority_translate_frac: 0.12
+    minority_scale_min: 0.90
+    minority_scale_max: 1.10
+    minority_erasing_p: 0.3

@@ -1,0 +1,29 @@
+# Phase I: Data-level improvements for minority classes
+# Experiment I2 - Class-aware augmentation only (alpha=1.0)
+# Tests whether stronger minority augmentation improves diversity
+# while keeping the original 1/N resampling.
+_base_:
+  - ../../../base/wm811k_classifier.yaml
+  - ../../models/resnet50_gem.yaml
+  - ../../recipes/cb_sampler_focal_multiclass.yaml
+
+task_mode: multiclass
+
+train:
+  epochs: 25
+  lr: 5.0e-4
+  focal_gamma: 1.5
+
+data:
+  augment:
+    random_flip: true
+    random_rotate90: true
+    random_translate_frac: 0.08
+    random_scale_min: 0.95
+    random_scale_max: 1.05
+    class_aware: true
+    minority_classes: ["Donut", "Near-full", "Random", "Scratch", "Loc"]
+    minority_translate_frac: 0.12
+    minority_scale_min: 0.90
+    minority_scale_max: 1.10
+    minority_erasing_p: 0.3

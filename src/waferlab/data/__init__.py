@@ -32,7 +32,9 @@ from .interim import (
 )
 from .processed import build_processed_dataset, build_wm811k_processed_dataset, load_data_config
 from .transforms import (
+    ClassAwareAugmentation,
     WaferAugmentation,
+    WaferRandomErasing,
     InjectFailureTypeIdx,
     compose,
     prepare_input,

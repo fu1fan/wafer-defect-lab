@@ -11,7 +11,13 @@ from torch.utils.data import DataLoader, Subset, WeightedRandomSampler
 
 from ..config import load_yaml_config
 from ..registry import DATASET_REGISTRY
-from .transforms import WaferAugmentation, InjectFailureTypeIdx, compose
+from .transforms import (
+    ClassAwareAugmentation,
+    InjectFailureTypeIdx,
+    WaferAugmentation,
+    WaferRandomErasing,
+    compose,
+)
 
 
 def load_dataloader_config(config_path: str | Path) -> dict[str, Any]:
@@ -25,11 +31,18 @@ def load_dataloader_config(config_path: str | Path) -> dict[str, Any]:
 def _build_class_balanced_sampler(
     dataset: Any,
     task_mode: str,
+    alpha: float = 1.0,
 ) -> WeightedRandomSampler:
-    """Create a WeightedRandomSampler that oversamples minority classes.
+    """Create a WeightedRandomSampler that rebalances class frequencies.
 
-    Computes per-sample weight as ``1 / class_count`` so that all classes
-    contribute equally in expectation to each epoch.
+    Per-sample weight is proportional to ``class_count ** (-alpha)``.
+
+    * ``alpha=1.0`` – pure inverse-frequency (original behaviour, fully flat).
+    * ``alpha=0.5`` – square-root smoothing (partial rebalancing).
+    * ``alpha=0.0`` – no rebalancing (original class distribution).
+
+    Values in ``(0, 1)`` give a smooth trade-off between under-representing
+    the majority class and over-repeating rare classes.
     """
     from ..models.resnet import FAILURE_TYPE_TO_IDX
 
@@ -49,15 +62,20 @@ def _build_class_balanced_sampler(
         labels = labels[dataset.indices]
 
     class_counts = np.bincount(labels)
-    class_weights = 1.0 / np.maximum(class_counts, 1).astype(np.float64)
+    class_weights = np.power(
+        np.maximum(class_counts, 1).astype(np.float64), -alpha,
+    )
+    # Normalise so weights sum to 1 (avoids numerical issues).
+    class_weights = class_weights / class_weights.sum()
     sample_weights = class_weights[labels]
     sample_weights_t = torch.from_numpy(sample_weights).double()
 
     num_samples = len(labels)
+    effective_ratio = class_weights.max() / max(class_weights.min(), 1e-12)
     print(
         f"[class_balanced_sampler] {num_samples} samples, "
-        f"{len(class_counts)} classes, "
-        f"effective oversampling for minority classes enabled"
+        f"{len(class_counts)} classes, alpha={alpha:.2f}, "
+        f"max/min weight ratio={effective_ratio:.1f}x"
     )
     return WeightedRandomSampler(
         weights=sample_weights_t,
@@ -97,8 +115,7 @@ def build_classification_dataloaders(
 
     include_meta = task_mode == "multiclass"
 
-    # Assemble per-split transforms.
-    train_transforms: list = []
+    # ── Augmentation parameters ──────────────────────────────────────
     random_flip = bool(aug_cfg.get("random_flip", True))
     random_rotate90 = bool(aug_cfg.get("random_rotate90", True))
     random_translate_frac = float(aug_cfg.get("random_translate_frac", 0.0))
@@ -111,7 +128,43 @@ def build_classification_dataloaders(
         or abs(random_scale_min - 1.0) > 1e-6
         or abs(random_scale_max - 1.0) > 1e-6
     )
-    if has_spatial_aug:
+
+    # Class-aware augmentation: stronger transforms for minority classes.
+    use_class_aware = bool(aug_cfg.get("class_aware", False)) and include_meta
+
+    # Global random erasing (applied to ALL classes, independent of
+    # class-aware augmentation which has its own minority-only erasing).
+    global_erasing_p = float(aug_cfg.get("random_erasing_p", 0.0))
+
+    # Assemble per-split transforms.
+    train_transforms: list = []
+
+    if use_class_aware:
+        minority_list = aug_cfg.get("minority_classes", None)
+        minority_set = set(minority_list) if minority_list else None
+        train_transforms.append(
+            ClassAwareAugmentation(
+                minority_classes=minority_set,
+                random_flip=random_flip,
+                random_rotate90=random_rotate90,
+                random_translate_frac=random_translate_frac,
+                random_scale_min=random_scale_min,
+                random_scale_max=random_scale_max,
+                minority_translate_frac=float(
+                    aug_cfg.get("minority_translate_frac", 0.12)
+                ),
+                minority_scale_min=float(
+                    aug_cfg.get("minority_scale_min", 0.90)
+                ),
+                minority_scale_max=float(
+                    aug_cfg.get("minority_scale_max", 1.10)
+                ),
+                minority_erasing_p=float(
+                    aug_cfg.get("minority_erasing_p", 0.3)
+                ),
+            )
+        )
+    elif has_spatial_aug:
         train_transforms.append(
             WaferAugmentation(
                 random_flip=random_flip,
@@ -121,6 +174,10 @@ def build_classification_dataloaders(
                 random_scale_max=random_scale_max,
             )
         )
+
+    if global_erasing_p > 0:
+        train_transforms.append(WaferRandomErasing(p=global_erasing_p))
+
     if task_mode == "multiclass":
         train_transforms.append(InjectFailureTypeIdx())
 
@@ -161,10 +218,13 @@ def build_classification_dataloaders(
 
     # Optional class-balanced sampler for the training set.
     sampler_type = str(data_cfg.get("sampler", "")).strip().lower()
+    sampler_alpha = float(data_cfg.get("sampler_alpha", 1.0))
     train_sampler = None
     shuffle_train = True
     if sampler_type == "class_balanced" and not smoke_test:
-        train_sampler = _build_class_balanced_sampler(train_ds, task_mode)
+        train_sampler = _build_class_balanced_sampler(
+            train_ds, task_mode, alpha=sampler_alpha,
+        )
         shuffle_train = False  # mutually exclusive with sampler
 
     return {

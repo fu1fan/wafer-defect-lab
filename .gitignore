@@ -218,6 +218,9 @@ __marimo__/
 # MacOS
 *.DS_Store
 
+# Local handoff bundles for external PPT agents
+ppt_agent_handoff/
+
 # Local exported reports
 reports/*
 !reports/.gitkeep

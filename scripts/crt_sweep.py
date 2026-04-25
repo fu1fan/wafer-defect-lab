@@ -191,16 +191,34 @@ def train_crt(model, train_loader, val_loader, *, lr, focal_gamma, epochs,
     return model, best_score, best_epoch
 
 
+def parse_args():
+    import argparse
+    p = argparse.ArgumentParser(description="Phase G cRT sweep")
+    p.add_argument(
+        "--base-checkpoint",
+        type=Path,
+        default=PROJECT_ROOT / "outputs" / "phase_d" / "D1_gem_tuned" / "best.pt",
+        help="Path to the Phase-D best.pt checkpoint to warm-start cRT from.",
+    )
+    p.add_argument(
+        "--output-dir",
+        type=Path,
+        default=PROJECT_ROOT / "outputs" / "phase_g",
+        help="Directory under which per-experiment subdirs will be created.",
+    )
+    return p.parse_args()
+
+
 def main():
+    args = parse_args()
     device = resolve_device("auto")
     processed_root = resolve_processed_root(PROJECT_ROOT)
-    base_checkpoint = PROJECT_ROOT / "outputs" / "phase_d" / "D1_gem_tuned" / "best.pt"
-    output_base = PROJECT_ROOT / "outputs" / "phase_g"
+    base_checkpoint = args.base_checkpoint
+    output_base = args.output_dir
     output_base.mkdir(parents=True, exist_ok=True)
 
     # Load config for dataloaders
-    summary = json.load(open(
-        PROJECT_ROOT / "outputs" / "phase_d" / "D1_gem_tuned" / "run_summary.json"))
+    summary = json.load(open(base_checkpoint.parent / "run_summary.json"))
     config = summary.get("train_config", {})
     config["task_mode"] = "multiclass"
 

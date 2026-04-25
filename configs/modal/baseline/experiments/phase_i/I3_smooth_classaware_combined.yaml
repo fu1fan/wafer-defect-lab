@@ -1,0 +1,14 @@
+# Phase I: Data-level improvements for minority classes
+# Experiment I3 - Combined: smooth resampling (alpha=0.75) + class-aware augmentation
+# Full combination of both data-level improvements.
+_base_:
+  - ../../../base/wm811k_classifier.yaml
+  - ../../models/resnet50_gem.yaml
+  - ../../recipes/cb_smooth_classaware_focal_multiclass.yaml
+
+task_mode: multiclass
+
+train:
+  epochs: 25
+  lr: 5.0e-4
+  focal_gamma: 1.5
